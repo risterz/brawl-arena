@@ -8,6 +8,7 @@ import {
   MatchState,
   Team,
 } from '@brawl-arena/shared';
+import { computePodiumLineup } from '../render/victoryStage';
 
 export interface HomeViewProps {
   playerName: string;
@@ -326,11 +327,42 @@ export class ScreenManager {
   public renderResults(props: ResultsViewProps): void {
     this.container.classList.remove('hidden');
     const { state, localSlot } = props;
-    const myTeam = state.brawlers[localSlot]?.team ?? 'blue';
+    const lineup = computePodiumLineup(state, localSlot);
     const headline =
-      state.winner === 'draw' ? 'DRAW!' : state.winner === myTeam ? 'VICTORY!' : 'DEFEAT';
+      lineup.outcome === 'draw' ? 'DRAW!' : lineup.outcome === 'victory' ? 'VICTORY!' : 'DEFEAT';
     const headColor =
-      state.winner === 'draw' ? '#ffd43b' : state.winner === myTeam ? '#32e276' : '#ff4757';
+      lineup.outcome === 'draw' ? '#ffd43b' : lineup.outcome === 'victory' ? '#32e276' : '#ff4757';
+
+    const enemyStarNote =
+      lineup.overallStarPlayer && lineup.overallStarPlayer.team !== lineup.myTeam
+        ? `<div class="results-enemy-star">★ STAR PLAYER: ${escapeHtml(lineup.overallStarPlayer.name)} (${escapeHtml(BRAWLERS[lineup.overallStarPlayer.brawlerId].name)})</div>`
+        : '';
+
+    const podiumCards = lineup.members
+      .map((m) => {
+        const b = m.brawler;
+        const bCfg = BRAWLERS[b.brawlerId];
+        const teamColor = b.team === 'blue' ? '#54c7ff' : '#ff6b7a';
+        const badge = m.isStarPlayer
+          ? '<div class="podium-card-badge">★ STAR PLAYER</div>'
+          : m.isTeamMvp
+            ? '<div class="podium-card-badge mvp">TEAM MVP</div>'
+            : '';
+        const youTag = m.isLocal ? ' (You)' : '';
+        return `
+          <div class="podium-card ${m.position === 'center' ? 'center' : ''}">
+            ${badge}
+            <div class="podium-card-name" style="color:${teamColor};">${escapeHtml(b.name)}${youTag}</div>
+            <div class="podium-card-brawler">${escapeHtml(bCfg.name)}</div>
+            <div class="podium-card-stats">
+              <span>⚔️ ${b.stats.kills}/${b.stats.deaths}</span>
+              <span>💎 ${b.stats.gemsCollected}</span>
+              <span>💥 ${b.stats.damageDealt}</span>
+            </div>
+          </div>
+        `;
+      })
+      .join('');
 
     const rows = state.brawlers
       .map((b) => {
@@ -351,18 +383,36 @@ export class ScreenManager {
     const playAgainBtn =
       !props.isOnline || props.isHost
         ? `<button id="play-again-btn" class="btn btn-gold">${props.isOnline ? 'BACK TO LOBBY' : 'PLAY AGAIN'}</button>`
-        : '<span style="color:#ffd43b;font-weight:800;">Waiting for host to return to lobby...</span>';
+        : '<span style="color:#ffd43b;font-weight:800;background:rgba(11,19,38,0.8);padding:8px 14px;border-radius:12px;">Waiting for host to return to lobby...</span>';
 
     this.container.innerHTML = `
-      <div class="modal-backdrop">
-        <div class="modal-card">
-          <div class="modal-header">
-            <h2 style="color:${headColor};font-size:32px;">${headline}</h2>
-            <div style="font-family:'Fredoka',sans-serif;font-size:20px;">
+      <div class="results-stage-overlay">
+        <div class="results-top-bar">
+          <h2 class="results-headline" style="color:${headColor};">${headline}</h2>
+          <div class="results-score-row">
+            <div class="results-score-pill">
               <span style="color:#54c7ff;">BLUE ${state.blueGems}</span> — <span style="color:#ff6b7a;">RED ${state.redGems}</span>
             </div>
+            ${enemyStarNote}
           </div>
+        </div>
 
+        <div class="results-bottom-zone">
+          <div class="results-podium-strip">${podiumCards}</div>
+          <div class="results-actions">
+            <button id="results-stats-btn" class="btn btn-blue btn-sm">📊 Full Stats</button>
+            <button id="results-home-btn" class="btn btn-dark">Home</button>
+            ${playAgainBtn}
+          </div>
+        </div>
+      </div>
+
+      <div id="results-stats-modal" class="modal-backdrop hidden">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h2 style="color:${headColor};">MATCH STATS</h2>
+            <button id="close-stats-btn" class="btn btn-dark btn-sm">Close</button>
+          </div>
           <table class="results-table">
             <thead>
               <tr>
@@ -375,15 +425,20 @@ export class ScreenManager {
             </thead>
             <tbody>${rows}</tbody>
           </table>
-
-          <div style="display:flex;justify-content:flex-end;gap:12px;margin-top:16px;align-items:center;">
-            <button id="results-home-btn" class="btn btn-dark">Home</button>
-            ${playAgainBtn}
-          </div>
         </div>
       </div>
     `;
 
+    const statsModal = this.container.querySelector('#results-stats-modal')!;
+    this.container.querySelector('#results-stats-btn')!.addEventListener('click', () => {
+      statsModal.classList.remove('hidden');
+    });
+    this.container.querySelector('#close-stats-btn')!.addEventListener('click', () => {
+      statsModal.classList.add('hidden');
+    });
+    statsModal.addEventListener('click', (e) => {
+      if (e.target === statsModal) statsModal.classList.add('hidden');
+    });
     this.container.querySelector('#results-home-btn')!.addEventListener('click', props.onHome);
     this.container.querySelector('#play-again-btn')?.addEventListener('click', props.onPlayAgain);
   }

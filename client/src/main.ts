@@ -247,10 +247,15 @@ function boot(): void {
     const lobby = online.getLobby();
     const curHostSlot = lobby ? lobby.hostSlot : -1;
     if (resultsShown && (!isOnline || lastResultsHostSlot === curHostSlot)) return;
+    const firstShow = !resultsShown;
     resultsShown = true;
     lastResultsHostSlot = curHostSlot;
     controls.setActive(false);
-    sfx.playBgm('victory');
+    hud.hide();
+    if (firstShow) {
+      renderer.setResultsScene(state, localSlot);
+      sfx.playBgm('victory');
+    }
     const isHost = Boolean(lobby && lobby.hostSlot === online.getMySlot());
     screens.renderResults({
       state,
@@ -295,6 +300,14 @@ function boot(): void {
 
     if (mode === 'home' || mode === 'lobby') {
       renderer.renderPreview(dt);
+    } else if (resultsShown) {
+      if (mode === 'online') {
+        const currentState = online.getState();
+        if (currentState) {
+          maybeShowResults(currentState, online.getMySlot(), true);
+        }
+      }
+      renderer.renderResults(dt);
     } else if (mode === 'solo' && localMatch) {
       const state = localMatch.getState();
       const { input, telegraph } = controls.sampleInput(

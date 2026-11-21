@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { BrawlerId, BRAWLERS, Team } from '@brawl-arena/shared';
 import { cloneAnimatedModel } from './modelBank';
 
+export type BrawlerEmote = 'none' | 'victory' | 'defeat';
+
 export interface BrawlerVisual {
   root: THREE.Group;
   bodyGroup: THREE.Group;
@@ -11,6 +13,7 @@ export interface BrawlerVisual {
   materials: THREE.Material[];
   hasAnimations: boolean;
   setOpacity: (alpha: number) => void;
+  setEmote: (emote: BrawlerEmote, timeOffset?: number) => void;
   updateAnimation: (dt: number, isMoving: boolean, isAttacking: boolean) => void;
 }
 
@@ -107,7 +110,10 @@ export function createBrawlerMesh(
     let idleAction: THREE.AnimationAction | null = null;
     let runAction: THREE.AnimationAction | null = null;
     let attackAction: THREE.AnimationAction | null = null;
+    let victoryAction: THREE.AnimationAction | null = null;
+    let defeatAction: THREE.AnimationAction | null = null;
     let currentBase: 'idle' | 'run' = 'idle';
+    let activeEmote: BrawlerEmote = 'none';
     let attackActive = false;
 
     if (animations.length > 0) {
@@ -117,6 +123,8 @@ export function createBrawlerMesh(
       const idleClip = findClip('idle') ?? animations[0];
       const runClip = findClip('run');
       const attackClip = findClip('attack');
+      const victoryClip = findClip('victory');
+      const defeatClip = findClip('defeat');
 
       if (idleClip) {
         idleAction = mixer.clipAction(idleClip);
@@ -131,6 +139,14 @@ export function createBrawlerMesh(
         attackAction.setLoop(THREE.LoopOnce, 1);
         attackAction.clampWhenFinished = false;
         attackAction.timeScale = 1.35;
+      }
+      if (victoryClip) {
+        victoryAction = mixer.clipAction(victoryClip);
+        victoryAction.setLoop(THREE.LoopRepeat, Infinity);
+      }
+      if (defeatClip) {
+        defeatAction = mixer.clipAction(defeatClip);
+        defeatAction.setLoop(THREE.LoopRepeat, Infinity);
       }
     }
 
@@ -155,8 +171,30 @@ export function createBrawlerMesh(
           }
         }
       },
+      setEmote(emote: BrawlerEmote, timeOffset = 0) {
+        activeEmote = emote;
+        if (!mixer) return;
+        idleAction?.stop();
+        runAction?.stop();
+        attackAction?.stop();
+        victoryAction?.stop();
+        defeatAction?.stop();
+        if (emote === 'victory' && victoryAction) {
+          victoryAction.reset().play();
+          victoryAction.time = timeOffset;
+        } else if (emote === 'defeat' && defeatAction) {
+          defeatAction.reset().play();
+          defeatAction.time = timeOffset;
+        } else if (idleAction) {
+          idleAction.reset().play();
+        }
+      },
       updateAnimation(dt: number, isMoving: boolean, isAttacking: boolean) {
         if (!mixer) return;
+        if (activeEmote !== 'none') {
+          mixer.update(dt);
+          return;
+        }
         const desired: 'idle' | 'run' = isMoving && runAction ? 'run' : 'idle';
         if (desired !== currentBase) {
           const from = currentBase === 'run' ? runAction : idleAction;
@@ -395,6 +433,9 @@ export function createBrawlerMesh(
           m.needsUpdate = true;
         }
       }
+    },
+    setEmote() {
+      // Procedural fallback uses victoryStage bounce
     },
     updateAnimation() {
       // Procedural fallback uses arenaScene bob/recoil

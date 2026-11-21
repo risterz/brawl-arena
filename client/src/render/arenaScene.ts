@@ -26,6 +26,7 @@ import {
 } from './perspective';
 import { getGemCrystalGeo } from './projectileMeshes';
 import { AimTelegraphInput, VfxManager } from './vfx';
+import { buildResultsStage, ResultsStageHandle } from './victoryStage';
 
 function createCheckeredGroundTexture(mapId: MapId): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
@@ -81,6 +82,7 @@ export class ArenaRenderer {
   private camera: THREE.PerspectiveCamera;
   private mapGroup: THREE.Group;
   private previewGroup: THREE.Group;
+  private resultsGroup: THREE.Group;
   private breakableMeshes: Map<string, THREE.Object3D> = new Map();
   private bushMeshes: THREE.Object3D[] = [];
   private waterMeshes: THREE.Mesh[] = [];
@@ -94,7 +96,9 @@ export class ArenaRenderer {
   private previewBrawlerId: BrawlerId | null = null;
   private previewStage: PreviewStageHandle | null = null;
   private matchSurround: MatchSurroundHandle | null = null;
-  private mode: 'preview' | 'match' = 'preview';
+  private resultsStage: ResultsStageHandle | null = null;
+  private resultsElapsed = 0;
+  private mode: 'preview' | 'match' | 'results' = 'preview';
   private shakeTimer = 0;
   private shakeIntensity = 0;
   private clock = 0;
@@ -130,12 +134,23 @@ export class ArenaRenderer {
 
     this.mapGroup = new THREE.Group();
     this.previewGroup = new THREE.Group();
+    this.resultsGroup = new THREE.Group();
+    this.resultsGroup.visible = false;
     this.scene.add(this.mapGroup);
     this.scene.add(this.previewGroup);
+    this.scene.add(this.resultsGroup);
 
     this.vfx = new VfxManager(this.scene);
     this.buildPreviewPedestal();
     this.resize();
+  }
+
+  private clearResultsStage(): void {
+    while (this.resultsGroup.children.length > 0) {
+      this.resultsGroup.remove(this.resultsGroup.children[0]);
+    }
+    this.resultsStage = null;
+    this.resultsGroup.visible = false;
   }
 
   private buildPreviewPedestal(): void {
@@ -145,6 +160,7 @@ export class ArenaRenderer {
 
   public setPreviewBrawler(brawlerId: BrawlerId): void {
     this.mode = 'preview';
+    this.clearResultsStage();
     this.scene.background = new THREE.Color('#2894ff');
     this.mapGroup.visible = false;
     this.previewGroup.visible = true;
@@ -189,8 +205,34 @@ export class ArenaRenderer {
     this.renderer.render(this.scene, this.camera);
   }
 
+  public setResultsScene(state: MatchState, localSlot: number): void {
+    this.mode = 'results';
+    this.clearResultsStage();
+    this.mapGroup.visible = false;
+    this.previewGroup.visible = false;
+    this.vfx.clear();
+    for (const entry of this.brawlers.values()) {
+      this.scene.remove(entry.visual.root);
+    }
+    this.brawlers.clear();
+
+    this.resultsStage = buildResultsStage(state, localSlot);
+    this.resultsGroup.add(this.resultsStage.group);
+    this.resultsGroup.visible = true;
+    this.resultsElapsed = 0;
+    this.scene.background = new THREE.Color(this.resultsStage.backgroundHex);
+  }
+
+  public renderResults(dt: number): void {
+    if (this.mode !== 'results' || !this.resultsStage) return;
+    this.resultsElapsed += dt;
+    this.resultsStage.update(this.resultsElapsed, dt, this.camera);
+    this.renderer.render(this.scene, this.camera);
+  }
+
   public loadMap(mapId: MapId, grid: Uint8Array): void {
     this.mode = 'match';
+    this.clearResultsStage();
     this.scene.background = new THREE.Color(mapId === 'crystal-cavern' ? '#9e5332' : '#1b8fd1');
     this.cameraSnapped = false;
     this.previewGroup.visible = false;
