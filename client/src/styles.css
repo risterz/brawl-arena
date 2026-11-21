@@ -486,6 +486,104 @@ body,
   font-weight: 700;
 }
 
+/* Desktop Circular Super / Ultimate Energy Gauge (Brawl Stars Style) */
+.super-meter {
+  position: fixed;
+  right: 26px;
+  bottom: 24px;
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  background: rgba(11, 19, 38, 0.86);
+  border: 3px solid #0b1326;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
+}
+
+.super-meter.ready {
+  background: radial-gradient(circle, rgba(255, 224, 71, 0.35) 0%, rgba(18, 28, 56, 0.92) 72%);
+  border-color: #ffd43b;
+  box-shadow: 0 0 24px rgba(255, 212, 59, 0.85), 0 6px 0 #0b1326;
+  animation: super-pulse 1.05s ease-in-out infinite;
+}
+
+.super-meter.just-ready {
+  transform: scale(1.16);
+}
+
+@keyframes super-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+
+.super-ring-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.super-ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 9;
+}
+
+.super-ring-fill {
+  fill: none;
+  stroke: #ffb703;
+  stroke-width: 9;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.1s linear;
+}
+
+.super-meter.ready .super-ring-fill {
+  stroke: #ffe94d;
+  filter: drop-shadow(0 0 6px #ffd43b);
+}
+
+.super-meter-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.05;
+  text-align: center;
+}
+
+.super-bolt {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.super-pct {
+  font-family: 'Fredoka', sans-serif;
+  font-size: 18px;
+  color: #ffe066;
+  text-shadow: 0 2px 0 #0b1326;
+}
+
+.super-meter.ready .super-pct {
+  font-size: 16px;
+  color: #fff6a6;
+}
+
+.super-sub {
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  color: #b7d3ff;
+  margin-top: 2px;
+}
+
+.super-meter.ready .super-sub {
+  color: #ffd43b;
+}
+
 /* Projected Overhead Bars */
 .overhead-bar {
   position: fixed;

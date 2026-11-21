@@ -55,6 +55,12 @@ export class SfxEngine {
     osc.stop(now + duration + 0.02);
   }
 
+  public playSuperReady(): void {
+    if (this.muted) return;
+    this.tone(587, 880, 0.14, 'triangle', 0.13, 0);
+    this.tone(880, 1175, 0.2, 'sine', 0.14, 0.08);
+  }
+
   public playEvent(event: MatchEvent): void {
     if (this.muted) return;
 

@@ -359,7 +359,12 @@ export class ControlManager {
     const team: Team = me ? me.team : 'blue';
 
     if (this.superStickEl && me) {
-      this.superStickEl.classList.toggle('ready', me.superCharge >= 100);
+      const pct = Math.max(0, Math.min(100, Math.round(me.superCharge)));
+      const ready = pct >= 100;
+      this.superStickEl.classList.toggle('ready', ready);
+      if (this.superKnobEl) {
+        this.superKnobEl.textContent = ready ? 'SUPER!' : `${pct}%`;
+      }
     }
 
     // Screen-space movement vector

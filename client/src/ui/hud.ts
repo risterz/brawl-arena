@@ -7,21 +7,29 @@ import {
 export interface HudCallbacks {
   onToggleMute: () => boolean;
   onLeave: () => void;
+  onSuperReady?: () => void;
 }
 
 export class MatchHud {
   private container: HTMLElement;
+  private onSuperReady?: () => void;
   private blueScoreEl!: HTMLElement;
   private redScoreEl!: HTMLElement;
   private timerEl!: HTMLElement;
   private countdownEl!: HTMLElement;
   private muteBtn!: HTMLButtonElement;
   private hintEl!: HTMLElement;
+  private superMeterEl!: HTMLElement;
+  private superArcEl!: SVGCircleElement;
+  private superPctEl!: HTMLElement;
+  private superSubEl!: HTMLElement;
   private barsContainer!: HTMLDivElement;
   private barNodes: Map<number, HTMLDivElement> = new Map();
+  private lastSuperReady = false;
 
   constructor(container: HTMLElement, callbacks: HudCallbacks) {
     this.container = container;
+    this.onSuperReady = callbacks.onSuperReady;
     this.container.innerHTML = `
       <div class="hud-top">
         <div class="gem-score blue">💎 <span id="hud-blue-gems">0</span></div>
@@ -34,6 +42,17 @@ export class MatchHud {
       </div>
       <div id="hud-countdown" class="countdown-banner hidden"></div>
       <div id="hud-bars"></div>
+      <div id="hud-super-meter" class="super-meter">
+        <svg class="super-ring-svg" viewBox="0 0 100 100">
+          <circle class="super-ring-bg" cx="50" cy="50" r="42" />
+          <circle id="hud-super-arc" class="super-ring-fill" cx="50" cy="50" r="42" />
+        </svg>
+        <div class="super-meter-inner">
+          <div class="super-bolt">⚡</div>
+          <div id="hud-super-pct" class="super-pct">0%</div>
+          <div id="hud-super-sub" class="super-sub">SUPER</div>
+        </div>
+      </div>
       <div id="hud-hint" class="controls-hint">WASD Move • Mouse Aim &amp; Click Shoot • Space/Right-Click Super • Q Auto-Aim</div>
     `;
 
@@ -43,6 +62,10 @@ export class MatchHud {
     this.countdownEl = this.container.querySelector('#hud-countdown')!;
     this.muteBtn = this.container.querySelector('#hud-mute-btn')!;
     this.hintEl = this.container.querySelector('#hud-hint')!;
+    this.superMeterEl = this.container.querySelector('#hud-super-meter')!;
+    this.superArcEl = this.container.querySelector('#hud-super-arc')!;
+    this.superPctEl = this.container.querySelector('#hud-super-pct')!;
+    this.superSubEl = this.container.querySelector('#hud-super-sub')!;
     this.barsContainer = this.container.querySelector('#hud-bars')!;
 
     this.muteBtn.addEventListener('click', () => {
@@ -55,15 +78,22 @@ export class MatchHud {
     });
   }
 
+  public setTouchMode(isTouch: boolean): void {
+    this.hintEl.classList.toggle('hidden', isTouch);
+    this.superMeterEl.classList.toggle('hidden', isTouch);
+  }
+
   public show(isTouch: boolean): void {
     this.container.classList.remove('hidden');
-    this.hintEl.classList.toggle('hidden', isTouch);
+    this.setTouchMode(isTouch);
+    this.lastSuperReady = false;
   }
 
   public hide(): void {
     this.container.classList.add('hidden');
     this.barsContainer.innerHTML = '';
     this.barNodes.clear();
+    this.lastSuperReady = false;
   }
 
   public update(
@@ -94,6 +124,30 @@ export class MatchHud {
 
     const local = state.brawlers[localSlot];
     const viewerTeam: Team = local ? local.team : 'blue';
+
+    // Update desktop circular Super/Ultimate energy gauge (0% -> 100% READY!)
+    if (local) {
+      const pct = Math.max(0, Math.min(100, Math.round(local.superCharge)));
+      const ready = pct >= 100;
+      const circumference = 2 * Math.PI * 42;
+      const offset = circumference * (1 - pct / 100);
+      this.superArcEl.style.strokeDasharray = `${circumference.toFixed(1)}`;
+      this.superArcEl.style.strokeDashoffset = `${offset.toFixed(1)}`;
+      this.superMeterEl.classList.toggle('ready', ready);
+      if (ready) {
+        this.superPctEl.textContent = 'READY!';
+        this.superSubEl.textContent = 'SPACE / RMB';
+      } else {
+        this.superPctEl.textContent = `${pct}%`;
+        this.superSubEl.textContent = 'SUPER';
+      }
+      if (ready && !this.lastSuperReady) {
+        this.superMeterEl.classList.add('just-ready');
+        this.onSuperReady?.();
+        window.setTimeout(() => this.superMeterEl.classList.remove('just-ready'), 550);
+      }
+      this.lastSuperReady = ready;
+    }
 
     for (const b of state.brawlers) {
       let node = this.barNodes.get(b.slotIndex);

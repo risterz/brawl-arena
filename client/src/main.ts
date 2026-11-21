@@ -38,6 +38,7 @@ function boot(): void {
       return sfx.isMuted();
     },
     onLeave: () => leaveToHome(),
+    onSuperReady: () => sfx.playSuperReady(),
   });
 
   const online = new OnlineMatchController({
@@ -226,6 +227,7 @@ function boot(): void {
       renderer.applyEvents(events, state, localMatch.localSlot);
       for (const ev of events) sfx.playEvent(ev);
       renderer.syncState(state, localMatch.localSlot, dt, telegraph);
+      hud.setTouchMode(controls.isTouchMode());
       hud.update(state, localMatch.localSlot, (wx, wy, h) => renderer.projectToScreen(wx, wy, h));
       maybeShowResults(state, localMatch.localSlot, false);
     } else if (mode === 'online') {
@@ -240,6 +242,7 @@ function boot(): void {
         const state = online.tick(dt, input);
         if (state) {
           renderer.syncState(state, mySlot, dt, telegraph);
+          hud.setTouchMode(controls.isTouchMode());
           hud.update(state, mySlot, (wx, wy, h) => renderer.projectToScreen(wx, wy, h));
           maybeShowResults(state, mySlot, true);
         }
