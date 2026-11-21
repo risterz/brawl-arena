@@ -240,4 +240,81 @@ describe('Brawl Ball (3v3) simulation & Bot AI', () => {
     expect(Number.isFinite(engine.state.ball!.x)).toBe(true);
     expect(Number.isFinite(engine.state.ball!.y)).toBe(true);
   });
+
+  it('Tackle directly steals the ball from an enemy carrier, knocks them back, and locks re-pickup briefly', () => {
+    const engine = createBrawlBallMatch('crystal-cavern');
+    const blue0 = engine.state.brawlers[0];
+    const red0 = engine.state.brawlers[3];
+    const ball = engine.state.ball!;
+
+    // Give Red0 the ball at center, place Blue0 1.4 tiles south ready to tackle North
+    red0.x = 10.5;
+    red0.y = 15.5;
+    ball.x = 10.5;
+    ball.y = 15.5;
+    ball.holderSlot = red0.slotIndex;
+    ball.lastTouchTeam = 'red';
+    ball.lastTouchSlot = red0.slotIndex;
+
+    blue0.x = 10.5;
+    blue0.y = 17.0;
+    const redHpBefore = red0.hp;
+
+    engine.setInput(0, {
+      moveX: 0,
+      moveY: -1,
+      aimAngle: -Math.PI / 2,
+      fire: false,
+      superFire: false,
+      autoAim: false,
+      tackle: true,
+    });
+
+    let stolenEvent = false;
+    for (let i = 0; i < 6; i++) {
+      const evs = engine.step(0.05);
+      if (evs.some((e) => e.type === 'tackle' && e.stolen && e.slotIndex === 0 && e.targetSlot === 3)) {
+        stolenEvent = true;
+      }
+      engine.setInput(0, { moveX: 0, moveY: 0, aimAngle: -Math.PI / 2, fire: false, superFire: false, autoAim: false, tackle: false });
+    }
+
+    expect(stolenEvent).toBe(true);
+    expect(ball.holderSlot).toBe(0);
+    expect(ball.kickCooldownSlot).toBe(3);
+    expect(ball.pickupCooldown).toBeGreaterThan(0.2);
+    expect(red0.hp).toBeLessThan(redHpBefore);
+    expect(blue0.tackleCooldown).toBeGreaterThan(2.0);
+    // Victim knocked back away from tackler
+    expect(Math.hypot(red0.x - blue0.x, red0.y - blue0.y)).toBeGreaterThan(1.0);
+  });
+
+  it('separates overlapping brawlers and keeps allied bots spaced away from the ball carrier', () => {
+    const engine = createBrawlBallMatch('crystal-cavern');
+    const blue0 = engine.state.brawlers[0];
+    const blue1 = engine.state.brawlers[1];
+    const ball = engine.state.ball!;
+
+    // Stack Blue1 directly on top of ball carrier Blue0
+    blue0.x = 10.5;
+    blue0.y = 16.5;
+    blue1.x = 10.5;
+    blue1.y = 16.5;
+    ball.holderSlot = 0;
+    ball.x = 10.5;
+    ball.y = 16.5;
+
+    engine.step(0.05);
+    const sepAfterStep = Math.hypot(blue1.x - blue0.x, blue1.y - blue0.y);
+    expect(sepAfterStep).toBeGreaterThan(0.8);
+
+    // Check allied bot AI steers AWAY when within personal-space radius of allied ball holder
+    const ai = new BotController();
+    blue1.x = 11.4;
+    blue1.y = 16.5;
+    const inputs = ai.computeInputs(engine.state, 0.05);
+    const allyMove = inputs.get(1)!;
+    // Ally is to the East (+x) of carrier -> should steer further East (+x) instead of into carrier
+    expect(allyMove.moveX).toBeGreaterThan(0.2);
+  });
 });

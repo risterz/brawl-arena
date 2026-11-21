@@ -68,7 +68,7 @@ function boot(): void {
       controls.setActive(false);
       hud.hide();
       sfx.playBgm('lobby');
-      renderer.setPreviewBrawler(lobby.slots[mySlot]?.brawlerId ?? selectedBrawler);
+      renderer.setPreviewBrawler(lobby.slots[mySlot]?.brawlerId ?? selectedBrawler, lobby.mode ?? 'gem-grab');
       screens.renderLobby({
         lobby,
         mySlot,
@@ -158,7 +158,7 @@ function boot(): void {
     controls.setActive(false);
     hud.hide();
     sfx.playBgm('lobby');
-    renderer.setPreviewBrawler(selectedBrawler);
+    renderer.setPreviewBrawler(selectedBrawler, selectedMode);
 
     screens.renderHome({
       playerName,

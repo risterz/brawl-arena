@@ -309,6 +309,13 @@ export class SfxEngine {
         this.playSfx('super_cast', 0.05, 60);
       }
       this.playSfx('golem', 0.08, 60);
+    } else if (event.type === 'tackle') {
+      if (event.stolen) {
+        this.playSfx('hit', 0.06, 40);
+        this.playSfx('gem', 0.04, 60);
+      } else {
+        this.playSfx('golem', 0.12, 60);
+      }
     } else if (event.type === 'goal') {
       this.playSfx('match_end', 0, 250);
     } else if (event.type === 'wall_break') {

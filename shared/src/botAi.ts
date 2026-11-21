@@ -14,6 +14,7 @@ interface BotMemory {
   stuckTimer: number;
   unstuckDir: Vec2;
   unstuckTimer: number;
+  lastBallHolder: number | null;
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -203,6 +204,7 @@ export class BotController {
         stuckTimer: 0,
         unstuckDir: { x: 0, y: 0 },
         unstuckTimer: 0,
+        lastBallHolder: null,
       };
       this.memory.set(slotIndex, m);
     }
@@ -598,6 +600,10 @@ export class BotController {
   private computeBrawlBallInput(state: MatchState, bot: BrawlerState, dt: number): PlayerInput {
     const ball = state.ball!;
     const mem = this.getMemory(bot.slotIndex, bot);
+    if (mem.lastBallHolder !== ball.holderSlot) {
+      mem.lastBallHolder = ball.holderSlot;
+      mem.pathTimer = 0;
+    }
     mem.pathTimer -= dt;
     mem.strafeTimer -= dt;
     if (mem.strafeTimer <= 0) {
@@ -630,6 +636,7 @@ export class BotController {
     let aimAngle = bot.facing;
     let fire = false;
     let superFire = false;
+    let tackle = false;
 
     if (isHoldingBall) {
       // Dribble aggressively toward enemy goal mouth (aim slightly left/right of central goalie)
@@ -680,6 +687,7 @@ export class BotController {
         goal = { x: wingX, y: fwdY };
       }
     } else if (enemyHoldsBall && holder) {
+      const distToHolder = Math.hypot(holder.x - bot.x, holder.y - bot.y);
       if (isDefender) {
         // Play goalkeeper between enemy ball carrier and our goal mouth!
         goal = {
@@ -687,13 +695,29 @@ export class BotController {
           y: clamp(holder.y * 0.3 + ownGoal.y * 0.7, 2.5, state.height - 2.5),
         };
       } else {
-        // Hunt & tackle enemy ball carrier immediately!
-        goal = { x: holder.x, y: holder.y };
+        // Intercept slightly in front of enemy carrier instead of stacking inside them
+        const toOwnX = ownGoal.x - holder.x;
+        const toOwnY = ownGoal.y - holder.y;
+        const toOwnLen = Math.max(0.01, Math.hypot(toOwnX, toOwnY));
+        goal = {
+          x: clamp(holder.x + (toOwnX / toOwnLen) * 1.65, 2.0, state.width - 2.0),
+          y: clamp(holder.y + (toOwnY / toOwnLen) * 1.65, 2.0, state.height - 2.0),
+        };
+        // Lunge with Tackle when in clean steal range!
+        if (
+          bot.tackleCooldown <= 0 &&
+          distToHolder >= 1.1 &&
+          distToHolder <= 2.45 &&
+          hasLineOfSight(state.grid, bot, holder)
+        ) {
+          aimAngle = Math.atan2(holder.y - bot.y, holder.x - bot.x);
+          tackle = true;
+        }
       }
     } else if (allyHoldsBall && holder) {
-      // Escort ball carrier by running ahead into a passing/clearing lane
-      const sideX = bot.slotIndex % 2 === 0 ? -4.2 : 4.2;
-      const aheadY = bot.team === 'blue' ? -4.0 : 4.0;
+      // Spread wide into open passing lanes and NEVER stick to the allied ball carrier!
+      const sideX = bot.slotIndex % 2 === 0 ? -5.0 : 5.0;
+      const aheadY = bot.team === 'blue' ? -4.5 : 4.5;
       goal = {
         x: clamp(holder.x + sideX, 2.5, state.width - 2.5),
         y: clamp(holder.y + aheadY, 3.0, state.height - 3.0),
@@ -716,6 +740,20 @@ export class BotController {
     } else {
       moveX = 0;
       moveY = 0;
+    }
+
+    // Personal-space buffer around allied ball carrier so teammates never crowd or "double hold" the ball
+    if (allyHoldsBall && holder) {
+      const rx = bot.x - holder.x;
+      const ry = bot.y - holder.y;
+      const rDist = Math.hypot(rx, ry);
+      if (rDist < 3.4) {
+        const push = ((3.4 - rDist) / 3.4) * 2.2;
+        const nx = rDist > 0.05 ? rx / rDist : bot.slotIndex % 2 === 0 ? -1 : 1;
+        const ny = rDist > 0.05 ? ry / rDist : bot.team === 'blue' ? -0.5 : 0.5;
+        moveX += nx * push;
+        moveY += ny * push;
+      }
     }
 
     // Dodge enemy projectiles/puddles even during Brawl Ball!
@@ -767,11 +805,27 @@ export class BotController {
       aimAngle = Math.atan2(moveY, moveX);
     }
 
+    if (tackle && holder) {
+      // Point movement vector toward enemy carrier on the tackle trigger frame
+      const tx = holder.x - bot.x;
+      const ty = holder.y - bot.y;
+      const tLen = Math.max(0.01, Math.hypot(tx, ty));
+      return {
+        moveX: tx / tLen,
+        moveY: ty / tLen,
+        aimAngle: Math.atan2(ty, tx),
+        fire: false,
+        superFire: false,
+        autoAim: false,
+        tackle: true,
+      };
+    }
+
     const fl = Math.hypot(moveX, moveY);
     if (fl > 1) {
       moveX /= fl;
       moveY /= fl;
     }
-    return { moveX, moveY, aimAngle, fire, superFire, autoAim: false };
+    return { moveX, moveY, aimAngle, fire, superFire, autoAim: false, tackle: false };
   }
 }

@@ -136,6 +136,10 @@ export interface BrawlerState {
   healTickTimer: number;
   revealedTimer: number;
   recoilTimer: number;
+  tackleCooldown: number;
+  tackleTimer: number;
+  tackleDirX: number;
+  tackleDirY: number;
   leap: LeapState | null;
   burst: BurstQueue | null;
   stats: BrawlerStats;
@@ -227,6 +231,7 @@ export type MatchEvent =
   | { type: 'gem_spawn'; x: number; y: number }
   | { type: 'gem_pickup'; slotIndex: number; x: number; y: number }
   | { type: 'ball_kick'; slotIndex: number; isSuper: boolean; x: number; y: number }
+  | { type: 'tackle'; slotIndex: number; targetSlot: number | null; stolen: boolean; x: number; y: number; angle: number }
   | { type: 'goal'; team: Team; scorerSlot: number; blueScore: number; redScore: number }
   | { type: 'countdown_start'; team: Team }
   | { type: 'countdown_cancel' }
@@ -239,6 +244,7 @@ export interface PlayerInput {
   fire: boolean;
   superFire: boolean;
   autoAim: boolean;
+  tackle?: boolean;
 }
 
 export interface SlotSetup {

@@ -40,7 +40,7 @@ export interface CompactInput {
   md: number;
   /** Quantized aim angle in 5-degree steps (0..71) */
   aa: number;
-  /** Bitmask: 1=fire, 2=superFire, 4=autoAim */
+  /** Bitmask: 1=fire, 2=superFire, 4=autoAim, 8=tackle */
   fl: number;
 }
 
@@ -54,7 +54,11 @@ export function quantizeInput(input: PlayerInput): CompactInput {
   }
   const aimNorm = ((input.aimAngle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
   const aa = Math.round((aimNorm / (Math.PI * 2)) * 72) % 72;
-  const fl = (input.fire ? 1 : 0) | (input.superFire ? 2 : 0) | (input.autoAim ? 4 : 0);
+  const fl =
+    (input.fire ? 1 : 0) |
+    (input.superFire ? 2 : 0) |
+    (input.autoAim ? 4 : 0) |
+    (input.tackle ? 8 : 0);
   return { md, aa, fl };
 }
 
@@ -74,6 +78,7 @@ export function dequantizeInput(c: CompactInput): PlayerInput {
     fire: (c.fl & 1) !== 0,
     superFire: (c.fl & 2) !== 0,
     autoAim: (c.fl & 4) !== 0,
+    tackle: (c.fl & 8) !== 0,
   };
 }
 
@@ -140,6 +145,8 @@ export function serializeSnapshot(
       facing: Number(b.facing.toFixed(3)),
       ammo: Number(b.ammo.toFixed(2)),
       superCharge: Math.round(b.superCharge),
+      tackleCooldown: Number(b.tackleCooldown.toFixed(2)),
+      tackleTimer: Number(b.tackleTimer.toFixed(2)),
       leap: b.leap ? { ...b.leap } : null,
       burst: null,
       stats: { ...b.stats },

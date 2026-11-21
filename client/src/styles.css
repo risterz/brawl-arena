@@ -654,6 +654,66 @@ body,
   color: #ffd43b;
 }
 
+/* Desktop Brawl Ball Tackle Badge */
+.tackle-meter {
+  position: fixed;
+  right: 146px;
+  bottom: 34px;
+  width: 82px;
+  height: 82px;
+  border-radius: 50%;
+  background: rgba(11, 19, 38, 0.84);
+  border: 3px solid #355084;
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  line-height: 1.05;
+  opacity: 0.72;
+  transition: transform 0.14s ease, border-color 0.14s ease, opacity 0.14s ease;
+}
+
+.tackle-meter.ready {
+  opacity: 1;
+  background: radial-gradient(circle, rgba(56, 224, 255, 0.34) 0%, rgba(14, 30, 62, 0.94) 72%);
+  border-color: #4ce8ff;
+  box-shadow: 0 0 18px rgba(76, 232, 255, 0.65), 0 5px 0 #0b1326;
+}
+
+.tackle-icon {
+  font-size: 18px;
+}
+
+.tackle-val {
+  font-family: 'Fredoka', sans-serif;
+  font-size: 13px;
+  color: #e6f9ff;
+}
+
+.tackle-sub {
+  font-size: 8.5px;
+  font-weight: 900;
+  color: #8fdfff;
+  margin-top: 2px;
+}
+
+.stick-tackle {
+  right: 162px;
+  bottom: 132px;
+  width: 74px;
+  height: 74px;
+  background: rgba(34, 184, 230, 0.25);
+  border: 3px solid rgba(110, 236, 255, 0.65);
+}
+
+.stick-tackle.ready {
+  background: rgba(48, 224, 255, 0.44);
+  border-color: #7df6ff;
+  box-shadow: 0 0 16px rgba(76, 232, 255, 0.75);
+}
+
 /* Projected Overhead Bars */
 .overhead-bar {
   position: fixed;

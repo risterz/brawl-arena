@@ -165,6 +165,7 @@ export class ArenaRenderer {
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private previewVisual: BrawlerVisual | null = null;
   private previewBrawlerId: BrawlerId | null = null;
+  private previewGameMode: GameMode = 'gem-grab';
   private previewStage: PreviewStageHandle | null = null;
   private matchSurround: MatchSurroundHandle | null = null;
   private resultsStage: ResultsStageHandle | null = null;
@@ -224,15 +225,23 @@ export class ArenaRenderer {
     this.resultsGroup.visible = false;
   }
 
-  private buildPreviewPedestal(): void {
-    this.previewStage = buildAnimatedPreviewStage();
+  private buildPreviewPedestal(gameMode: GameMode = 'gem-grab'): void {
+    if (this.previewStage) {
+      this.previewGroup.remove(this.previewStage.group);
+    }
+    this.previewGameMode = gameMode;
+    this.previewStage = buildAnimatedPreviewStage(gameMode);
     this.previewGroup.add(this.previewStage.group);
   }
 
-  public setPreviewBrawler(brawlerId: BrawlerId): void {
+  public setPreviewBrawler(brawlerId: BrawlerId, gameMode?: GameMode): void {
     this.mode = 'preview';
     this.clearResultsStage();
-    this.scene.background = new THREE.Color('#2894ff');
+    const targetMode = gameMode ?? this.previewGameMode;
+    if (!this.previewStage || targetMode !== this.previewGameMode) {
+      this.buildPreviewPedestal(targetMode);
+    }
+    this.scene.background = new THREE.Color(targetMode === 'brawl-ball' ? '#24a3ff' : '#321c7a');
     this.mapGroup.visible = false;
     this.previewGroup.visible = true;
     this.vfx.clear();
@@ -256,8 +265,10 @@ export class ArenaRenderer {
   public refreshPreview(): void {
     if (this.mode !== 'preview' || !this.previewBrawlerId) return;
     const current = this.previewBrawlerId;
+    const currentMode = this.previewGameMode;
     this.previewBrawlerId = null;
-    this.setPreviewBrawler(current);
+    this.buildPreviewPedestal(currentMode);
+    this.setPreviewBrawler(current, currentMode);
   }
 
   public renderPreview(dt: number): void {
@@ -763,6 +774,14 @@ export class ArenaRenderer {
       } else if (ev.type === 'ball_kick') {
         this.vfx.spawnHitBurst(ev.x, ev.y, ev.isSuper ? 0xffd43b : 0x56ecff, ev.isSuper ? 10 : 5);
         if (ev.isSuper) this.triggerShake(0.20, 0.18);
+      } else if (ev.type === 'tackle') {
+        if (ev.stolen) {
+          this.vfx.spawnHitBurst(ev.x, ev.y, 0x4ce8ff, 10);
+          this.vfx.spawnHitBurst(ev.x, ev.y, 0xffd43b, 6);
+          this.triggerShake(0.22, 0.20);
+        } else {
+          this.vfx.spawnHitBurst(ev.x, ev.y, 0x7df6ff, 5);
+        }
       } else if (ev.type === 'goal') {
         const goalZ = ev.team === 'blue' ? 1.2 : MAP_HEIGHT - 1.2;
         this.vfx.spawnExplosion(MAP_WIDTH / 2, goalZ, ev.team === 'blue' ? 0x29a8ff : 0xff4757, 1.65);
@@ -829,6 +848,7 @@ export class ArenaRenderer {
 
       entry.visual.root.position.set(b.x, 0, b.y);
       entry.visual.bodyGroup.rotation.y = -b.facing;
+      entry.visual.bodyGroup.rotation.z = b.tackleTimer > 0 ? -0.28 : 0;
 
       const moving = Math.hypot(b.vx, b.vy) > 0.25;
       if (entry.visual.hasAnimations) {

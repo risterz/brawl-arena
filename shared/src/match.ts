@@ -49,6 +49,13 @@ export const BRAWL_BALL_RESET_DURATION = 2.0;
 export const BALL_RADIUS = 0.38;
 export const BALL_KICK_SPEED = 15.0;
 export const BALL_SUPER_KICK_SPEED = 23.0;
+export const TACKLE_COOLDOWN = 3.2;
+export const TACKLE_DURATION = 0.22;
+export const TACKLE_SPEED = 11.2;
+export const TACKLE_HIT_RADIUS = 1.25;
+export const TACKLE_DAMAGE = 200;
+export const TACKLE_KNOCKBACK = 1.25;
+export const TACKLE_STEAL_LOCKOUT = 0.75;
 export const SUDDEN_DEATH_DURATION = 30.0;
 export const RESPAWN_DURATION = 4.0;
 export const SPAWN_INVULN_DURATION = 2.5;
@@ -122,6 +129,10 @@ export class MatchEngine {
         healTickTimer: 0,
         revealedTimer: 0,
         recoilTimer: 0,
+        tackleCooldown: 0,
+        tackleTimer: 0,
+        tackleDirX: 0,
+        tackleDirY: 0,
         leap: null,
         burst: null,
         stats: {
@@ -353,6 +364,10 @@ export class MatchEngine {
           b.outOfCombatTimer = 0;
           b.healTickTimer = 0;
           b.revealedTimer = 0;
+          b.tackleCooldown = 0;
+          b.tackleTimer = 0;
+          b.tackleDirX = 0;
+          b.tackleDirY = 0;
           b.leap = null;
           b.burst = null;
         }
@@ -363,6 +378,7 @@ export class MatchEngine {
       if (b.revealedTimer > 0) b.revealedTimer = Math.max(0, b.revealedTimer - dt);
       if (b.recoilTimer > 0) b.recoilTimer = Math.max(0, b.recoilTimer - dt);
       if (b.attackCooldown > 0) b.attackCooldown = Math.max(0, b.attackCooldown - dt);
+      if (b.tackleCooldown > 0) b.tackleCooldown = Math.max(0, b.tackleCooldown - dt);
 
       // Continuous 3-slot ammo reload
       if (b.ammo < cfg.maxAmmo) {
@@ -455,6 +471,99 @@ export class MatchEngine {
       const mx = mLen > 1 ? inp.moveX / mLen : inp.moveX;
       const my = mLen > 1 ? inp.moveY / mLen : inp.moveY;
 
+      const holdingBall = Boolean(this.state.ball && this.state.ball.holderSlot === b.slotIndex);
+
+      // Brawl Ball Tackle dash initiation (Shift / E on desktop, TACKLE button on touch)
+      if (
+        this.state.mode === 'brawl-ball' &&
+        inp.tackle &&
+        !holdingBall &&
+        b.tackleCooldown <= 0 &&
+        b.tackleTimer <= 0 &&
+        !b.burst
+      ) {
+        const dashAngle = mLen > 0.15 ? Math.atan2(my, mx) : inp.aimAngle;
+        b.tackleTimer = TACKLE_DURATION;
+        b.tackleCooldown = TACKLE_COOLDOWN;
+        b.tackleDirX = Math.cos(dashAngle);
+        b.tackleDirY = Math.sin(dashAngle);
+        b.facing = dashAngle;
+        b.recoilTimer = 0.22;
+        b.outOfCombatTimer = 0;
+        b.healTickTimer = 0;
+        events.push({
+          type: 'tackle',
+          slotIndex: b.slotIndex,
+          targetSlot: null,
+          stolen: false,
+          x: b.x,
+          y: b.y,
+          angle: dashAngle,
+        });
+      }
+      inp.tackle = false;
+
+      if (b.tackleTimer > 0) {
+        b.tackleTimer = Math.max(0, b.tackleTimer - dt);
+        b.vx = b.tackleDirX * TACKLE_SPEED;
+        b.vy = b.tackleDirY * TACKLE_SPEED;
+        const dashPos = resolveCircleGridCollision(
+          this.state.grid,
+          { x: b.x + b.vx * dt, y: b.y + b.vy * dt },
+          cfg.radius,
+        );
+        b.x = dashPos.x;
+        b.y = dashPos.y;
+
+        // Direct Steal check against enemy ball carrier during Tackle lunge!
+        const ball = this.state.ball;
+        if (ball && ball.holderSlot !== null) {
+          const victim = this.state.brawlers[ball.holderSlot];
+          if (victim && victim.alive && victim.team !== b.team && !victim.leap) {
+            const distToVictim = Math.hypot(victim.x - b.x, victim.y - b.y);
+            if (distToVictim <= TACKLE_HIT_RADIUS) {
+              // Direct Steal: snap ball to tackler & knock victim away with pickup lockout
+              ball.holderSlot = b.slotIndex;
+              ball.lastTouchTeam = b.team;
+              ball.lastTouchSlot = b.slotIndex;
+              ball.isSuperKick = false;
+              ball.kickCooldownSlot = victim.slotIndex;
+              ball.pickupCooldown = TACKLE_STEAL_LOCKOUT;
+
+              const kbAngle =
+                distToVictim > 0.05
+                  ? Math.atan2(victim.y - b.y, victim.x - b.x)
+                  : Math.atan2(b.tackleDirY, b.tackleDirX);
+              const pushed = resolveCircleGridCollision(
+                this.state.grid,
+                {
+                  x: victim.x + Math.cos(kbAngle) * TACKLE_KNOCKBACK,
+                  y: victim.y + Math.sin(kbAngle) * TACKLE_KNOCKBACK,
+                },
+                BRAWLERS[victim.brawlerId].radius,
+              );
+              victim.x = pushed.x;
+              victim.y = pushed.y;
+              victim.tackleTimer = 0;
+
+              this.applyDamage(b, victim, TACKLE_DAMAGE);
+              this.onSuperCharge(b, 8);
+              b.tackleTimer = 0;
+              events.push({
+                type: 'tackle',
+                slotIndex: b.slotIndex,
+                targetSlot: victim.slotIndex,
+                stolen: true,
+                x: victim.x,
+                y: victim.y,
+                angle: b.facing,
+              });
+            }
+          }
+        }
+        continue;
+      }
+
       b.vx = mx * cfg.moveSpeed;
       b.vy = my * cfg.moveSpeed;
       const nextPos = resolveCircleGridCollision(
@@ -470,7 +579,6 @@ export class MatchEngine {
       }
 
       // Handle Super or Primary fire — in Brawl Ball, firing while holding the ball KICKS it!
-      const holdingBall = Boolean(this.state.ball && this.state.ball.holderSlot === b.slotIndex);
       if (inp.superFire) {
         if (holdingBall && b.superCharge >= 100 && !b.burst) {
           b.superCharge = 0;
@@ -503,6 +611,45 @@ export class MatchEngine {
           b.attackCooldown = cfg.attackCooldown;
           triggerAttack(this.state, b, aim, false, events, this.callbacks);
           inp.autoAim = false;
+        }
+      }
+    }
+
+    // 1b. Soft brawler-to-brawler body separation so characters never overlap or "double hold" the ball
+    const holderSlot = this.state.ball?.holderSlot ?? null;
+    for (let i = 0; i < this.state.brawlers.length; i++) {
+      const a = this.state.brawlers[i];
+      if (!a.alive || a.leap) continue;
+      const rA = BRAWLERS[a.brawlerId].radius;
+      for (let j = i + 1; j < this.state.brawlers.length; j++) {
+        const b = this.state.brawlers[j];
+        if (!b.alive || b.leap) continue;
+        const rB = BRAWLERS[b.brawlerId].radius;
+        const minDist = rA + rB + 0.08;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < minDist) {
+          const overlap = minDist - dist;
+          const nx = dist > 0.001 ? dx / dist : Math.cos((i + j) * 1.7);
+          const ny = dist > 0.001 ? dy / dist : Math.sin((i + j) * 1.7);
+          // Give the ball holder priority so bots/teammates slide cleanly around them
+          const weightA = a.slotIndex === holderSlot ? 0.15 : b.slotIndex === holderSlot ? 0.85 : 0.5;
+          const weightB = 1 - weightA;
+          const posA = resolveCircleGridCollision(
+            this.state.grid,
+            { x: a.x - nx * overlap * weightA, y: a.y - ny * overlap * weightA },
+            rA,
+          );
+          const posB = resolveCircleGridCollision(
+            this.state.grid,
+            { x: b.x + nx * overlap * weightB, y: b.y + ny * overlap * weightB },
+            rB,
+          );
+          a.x = posA.x;
+          a.y = posA.y;
+          b.x = posB.x;
+          b.y = posB.y;
         }
       }
     }
@@ -674,6 +821,10 @@ export class MatchEngine {
       b.alive = true;
       b.respawnTimer = 0;
       b.invulnTimer = 1.0;
+      b.tackleCooldown = 0;
+      b.tackleTimer = 0;
+      b.tackleDirX = 0;
+      b.tackleDirY = 0;
       b.leap = null;
       b.burst = null;
     }

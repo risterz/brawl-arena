@@ -47,11 +47,12 @@ export class InputThrottle {
       return true;
     }
 
-    // Immediate edge send for fire / superFire / autoAim triggers
+    // Immediate edge send for fire / superFire / autoAim / tackle triggers
     const actionRising =
       ((q.fl & 1) !== 0 && (this.lastSent.fl & 1) === 0) ||
       ((q.fl & 2) !== 0 && (this.lastSent.fl & 2) === 0) ||
-      ((q.fl & 4) !== 0 && (this.lastSent.fl & 4) === 0);
+      ((q.fl & 4) !== 0 && (this.lastSent.fl & 4) === 0) ||
+      ((q.fl & 8) !== 0 && (this.lastSent.fl & 8) === 0);
 
     if (actionRising) {
       this.lastSent = q;
@@ -99,6 +100,7 @@ export class ControlManager {
   private pendingFire = false;
   private pendingSuper = false;
   private pendingAutoAim = false;
+  private pendingTackle = false;
   private isTouch = false;
   private active = false;
 
@@ -108,6 +110,8 @@ export class ControlManager {
   private aimKnobEl: HTMLDivElement | null = null;
   private superStickEl: HTMLDivElement | null = null;
   private superKnobEl: HTMLDivElement | null = null;
+  private tackleBtnEl: HTMLDivElement | null = null;
+  private tackleKnobEl: HTMLDivElement | null = null;
 
   private moveStick: TouchStickState = { pointerId: null, cx: 0, cy: 0, dx: 0, dy: 0, movedDist: 0, active: false };
   private aimStick: TouchStickState = { pointerId: null, cx: 0, cy: 0, dx: 0, dy: 0, movedDist: 0, active: false };
@@ -145,6 +149,7 @@ export class ControlManager {
   private buildTouchDom(): void {
     this.container.innerHTML = `
       <div class="touch-zone stick-move" data-stick="move"><div class="stick-knob">MOVE</div></div>
+      <div class="touch-zone stick-tackle hidden" data-stick="tackle"><div class="stick-knob">TACKLE</div></div>
       <div class="touch-zone stick-super" data-stick="super"><div class="stick-knob">SUPER</div></div>
       <div class="touch-zone stick-aim" data-stick="aim"><div class="stick-knob">AIM</div></div>
     `;
@@ -154,6 +159,8 @@ export class ControlManager {
     this.aimKnobEl = this.aimStickEl?.querySelector('.stick-knob') ?? null;
     this.superStickEl = this.container.querySelector('.stick-super');
     this.superKnobEl = this.superStickEl?.querySelector('.stick-knob') ?? null;
+    this.tackleBtnEl = this.container.querySelector('.stick-tackle');
+    this.tackleKnobEl = this.tackleBtnEl?.querySelector('.stick-knob') ?? null;
   }
 
   private bindEvents(): void {
@@ -166,8 +173,11 @@ export class ControlManager {
       if (k === 'Space') {
         e.preventDefault();
         this.pendingSuper = true;
-      } else if (k === 'KeyQ' || k === 'KeyE') {
+      } else if (k === 'KeyQ') {
         this.pendingAutoAim = true;
+      } else if (k === 'ShiftLeft' || k === 'ShiftRight' || k === 'KeyE') {
+        e.preventDefault();
+        this.pendingTackle = true;
       }
     });
 
@@ -298,6 +308,14 @@ export class ControlManager {
         this.pendingSuper = true;
       }
     });
+    if (this.tackleBtnEl) {
+      this.tackleBtnEl.addEventListener('pointerdown', (e) => {
+        if (!this.active) return;
+        e.preventDefault();
+        this.onUnlockAudio();
+        this.pendingTackle = true;
+      });
+    }
   }
 
   private updateStickVector(
@@ -328,6 +346,7 @@ export class ControlManager {
       this.pendingFire = false;
       this.pendingSuper = false;
       this.pendingAutoAim = false;
+      this.pendingTackle = false;
     }
     this.syncTouchVisibility();
     this.updateOrientationGate();
@@ -375,6 +394,16 @@ export class ControlManager {
       this.superStickEl.classList.toggle('ready', ready);
       if (this.superKnobEl) {
         this.superKnobEl.textContent = ready ? 'SUPER!' : `${pct}%`;
+      }
+    }
+
+    if (this.tackleBtnEl && me) {
+      const showTackle = state.mode === 'brawl-ball' && !holdingBall;
+      this.tackleBtnEl.classList.toggle('hidden', !showTackle);
+      const ready = me.tackleCooldown <= 0.01;
+      this.tackleBtnEl.classList.toggle('ready', ready);
+      if (this.tackleKnobEl) {
+        this.tackleKnobEl.textContent = ready ? 'TACKLE' : `${me.tackleCooldown.toFixed(1)}s`;
       }
     }
 
@@ -454,9 +483,11 @@ export class ControlManager {
     const fire = this.pendingFire || (!this.isTouch && this.mouseDownLeft);
     const superFire = this.pendingSuper;
     const autoAim = this.pendingAutoAim;
+    const tackle = this.pendingTackle;
     this.pendingFire = false;
     this.pendingSuper = false;
     this.pendingAutoAim = false;
+    this.pendingTackle = false;
 
     return {
       input: {
@@ -466,6 +497,7 @@ export class ControlManager {
         fire,
         superFire,
         autoAim,
+        tackle,
       },
       telegraph,
     };

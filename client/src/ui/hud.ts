@@ -31,9 +31,13 @@ export class MatchHud {
   private superArcEl!: SVGCircleElement;
   private superPctEl!: HTMLElement;
   private superSubEl!: HTMLElement;
+  private tackleMeterEl!: HTMLElement;
+  private tackleValEl!: HTMLElement;
+  private tackleSubEl!: HTMLElement;
   private barsContainer!: HTMLDivElement;
   private barNodes: Map<number, HTMLDivElement> = new Map();
   private lastSuperReady = false;
+  private isTouch = false;
 
   constructor(container: HTMLElement, callbacks: HudCallbacks) {
     this.container = container;
@@ -53,6 +57,11 @@ export class MatchHud {
       </div>
       <div id="hud-countdown" class="countdown-banner hidden"></div>
       <div id="hud-bars"></div>
+      <div id="hud-tackle-meter" class="tackle-meter hidden">
+        <div class="tackle-icon">💨</div>
+        <div id="hud-tackle-val" class="tackle-val">TACKLE</div>
+        <div id="hud-tackle-sub" class="tackle-sub">SHIFT / E</div>
+      </div>
       <div id="hud-super-meter" class="super-meter">
         <svg class="super-ring-svg" viewBox="0 0 100 100">
           <circle class="super-ring-bg" cx="50" cy="50" r="42" />
@@ -80,6 +89,9 @@ export class MatchHud {
     this.superArcEl = this.container.querySelector('#hud-super-arc')!;
     this.superPctEl = this.container.querySelector('#hud-super-pct')!;
     this.superSubEl = this.container.querySelector('#hud-super-sub')!;
+    this.tackleMeterEl = this.container.querySelector('#hud-tackle-meter')!;
+    this.tackleValEl = this.container.querySelector('#hud-tackle-val')!;
+    this.tackleSubEl = this.container.querySelector('#hud-tackle-sub')!;
     this.barsContainer = this.container.querySelector('#hud-bars')!;
 
     this.bgmBtn.addEventListener('click', () => {
@@ -98,8 +110,12 @@ export class MatchHud {
   }
 
   public setTouchMode(isTouch: boolean): void {
+    this.isTouch = isTouch;
     this.hintEl.classList.toggle('hidden', isTouch);
     this.superMeterEl.classList.toggle('hidden', isTouch);
+    if (isTouch) {
+      this.tackleMeterEl.classList.add('hidden');
+    }
   }
 
   public show(isTouch: boolean): void {
@@ -128,7 +144,7 @@ export class MatchHud {
       this.blueIconEl.textContent = scoreIcon;
       this.redIconEl.textContent = scoreIcon;
       this.hintEl.textContent = isBall
-        ? 'WASD Move • Walk into Ball to Dribble • Click Shoot/Kick • Space/RMB Super-Kick (Breaks Walls)'
+        ? 'WASD Move • Click Kick/Shoot • Space/RMB Super-Kick • Shift/E Tackle Steal'
         : 'WASD Move • Mouse Aim & Click Shoot • Space/Right-Click Super • Q Auto-Aim';
     }
 
@@ -187,6 +203,25 @@ export class MatchHud {
         window.setTimeout(() => this.superMeterEl.classList.remove('just-ready'), 550);
       }
       this.lastSuperReady = ready;
+
+      // Update Brawl Ball desktop Tackle cooldown badge
+      const showTackleHud = isBall && !this.isTouch;
+      this.tackleMeterEl.classList.toggle('hidden', !showTackleHud);
+      if (showTackleHud) {
+        const carrying = state.ball?.holderSlot === local.slotIndex;
+        const tackleReady = !carrying && local.tackleCooldown <= 0.01;
+        this.tackleMeterEl.classList.toggle('ready', tackleReady);
+        if (carrying) {
+          this.tackleValEl.textContent = 'DRIBBLE';
+          this.tackleSubEl.textContent = 'CLICK KICK';
+        } else if (tackleReady) {
+          this.tackleValEl.textContent = 'TACKLE';
+          this.tackleSubEl.textContent = 'SHIFT / E';
+        } else {
+          this.tackleValEl.textContent = `${local.tackleCooldown.toFixed(1)}s`;
+          this.tackleSubEl.textContent = 'COOLDOWN';
+        }
+      }
     }
 
     for (const b of state.brawlers) {

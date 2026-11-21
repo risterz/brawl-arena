@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { MAP_HEIGHT, MAP_WIDTH, MapId } from '@brawl-arena/shared';
+import { GameMode, MAP_HEIGHT, MAP_WIDTH, MapId } from '@brawl-arena/shared';
+import { cloneModel } from './modelBank';
 import { getGemCrystalGeo } from './projectileMeshes';
 
 export interface PreviewStageHandle {
@@ -12,23 +13,33 @@ export interface MatchSurroundHandle {
   update: (clock: number, dt: number) => void;
 }
 
-function createSkyGradientTexture(): THREE.CanvasTexture {
+function createSkyGradientTexture(gameMode: GameMode): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 512;
   const ctx = canvas.getContext('2d')!;
 
   const grad = ctx.createLinearGradient(0, 0, 0, 512);
-  grad.addColorStop(0.0, '#1259d4');
-  grad.addColorStop(0.32, '#1f84f7');
-  grad.addColorStop(0.62, '#4cc4ff');
-  grad.addColorStop(0.84, '#9eeeff');
-  grad.addColorStop(1.0, '#ffe8a8');
+  if (gameMode === 'brawl-ball') {
+    // Sunny daytime cartoon soccer stadium sky
+    grad.addColorStop(0.0, '#0f6ce6');
+    grad.addColorStop(0.35, '#24a3ff');
+    grad.addColorStop(0.68, '#7ae0ff');
+    grad.addColorStop(0.88, '#ccf7ff');
+    grad.addColorStop(1.0, '#fff4bf');
+  } else {
+    // Rich twilight gem-cavern indigo/purple horizon sky
+    grad.addColorStop(0.0, '#1c1258');
+    grad.addColorStop(0.32, '#3c1e8e');
+    grad.addColorStop(0.62, '#7338c9');
+    grad.addColorStop(0.84, '#c26bff');
+    grad.addColorStop(1.0, '#ffb86c');
+  }
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 512, 512);
 
   // Subtle cartoon halftone dots in upper sky for stylized arcade feel
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.09)';
   for (let y = 24; y < 260; y += 22) {
     const r = Math.max(1.5, 4.2 - y / 75);
     for (let x = (y % 44 === 0 ? 11 : 0); x < 512; x += 22) {
@@ -43,7 +54,7 @@ function createSkyGradientTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-function createSunburstTexture(): THREE.CanvasTexture {
+function createSunburstTexture(gameMode: GameMode): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 512;
@@ -57,9 +68,15 @@ function createSunburstTexture(): THREE.CanvasTexture {
     const a0 = (i / rays) * Math.PI * 2;
     const a1 = a0 + (Math.PI * 2) / (rays * 2);
     const rayGrad = ctx.createRadialGradient(cx, cy, 24, cx, cy, 252);
-    rayGrad.addColorStop(0.0, 'rgba(255, 244, 180, 0.55)');
-    rayGrad.addColorStop(0.45, 'rgba(138, 228, 255, 0.28)');
-    rayGrad.addColorStop(1.0, 'rgba(138, 228, 255, 0.0)');
+    if (gameMode === 'brawl-ball') {
+      rayGrad.addColorStop(0.0, 'rgba(255, 250, 200, 0.62)');
+      rayGrad.addColorStop(0.45, 'rgba(130, 238, 255, 0.28)');
+      rayGrad.addColorStop(1.0, 'rgba(130, 238, 255, 0.0)');
+    } else {
+      rayGrad.addColorStop(0.0, 'rgba(255, 180, 255, 0.56)');
+      rayGrad.addColorStop(0.45, 'rgba(176, 98, 255, 0.30)');
+      rayGrad.addColorStop(1.0, 'rgba(176, 98, 255, 0.0)');
+    }
     ctx.fillStyle = rayGrad;
     ctx.beginPath();
     ctx.moveTo(cx, cy);
@@ -73,51 +90,92 @@ function createSunburstTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-function createLobbyFloorTexture(): THREE.CanvasTexture {
+function createLobbyFloorTexture(gameMode: GameMode): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 512;
   const ctx = canvas.getContext('2d')!;
 
-  // Warm stylized cartoon arena courtyard paving
-  ctx.fillStyle = '#3b82d6';
-  ctx.fillRect(0, 0, 512, 512);
-
-  // Subtle checkerboard cartoon tiles
-  const step = 64;
-  for (let y = 0; y < 512; y += step) {
-    for (let x = 0; x < 512; x += step) {
-      const even = ((x / step) + (y / step)) % 2 === 0;
-      ctx.fillStyle = even ? '#4b97eb' : '#3d86dc';
-      ctx.fillRect(x, y, step, step);
-      ctx.strokeStyle = 'rgba(16, 46, 102, 0.16)';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(x + 1.5, y + 1.5, step - 3, step - 3);
+  if (gameMode === 'brawl-ball') {
+    // Lush two-tone mowed cartoon stadium soccer pitch turf!
+    const stripeH = 64;
+    for (let y = 0; y < 512; y += stripeH) {
+      ctx.fillStyle = (y / stripeH) % 2 === 0 ? '#37b857' : '#2ea64c';
+      ctx.fillRect(0, y, 512, stripeH);
     }
+
+    // Subtle turf blades & sunny radial glow
+    const sunGlow = ctx.createRadialGradient(256, 256, 24, 256, 256, 250);
+    sunGlow.addColorStop(0.0, 'rgba(182, 255, 160, 0.32)');
+    sunGlow.addColorStop(0.6, 'rgba(40, 160, 72, 0.05)');
+    sunGlow.addColorStop(1.0, 'rgba(14, 72, 34, 0.36)');
+    ctx.fillStyle = sunGlow;
+    ctx.fillRect(0, 0, 512, 512);
+
+    // Crisp painted white stadium pitch markings!
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.86)';
+    ctx.lineWidth = 8;
+    // Halfway line
+    ctx.beginPath();
+    ctx.moveTo(0, 256);
+    ctx.lineTo(512, 256);
+    ctx.stroke();
+
+    // Center circle
+    ctx.beginPath();
+    ctx.arc(256, 256, 110, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Outer pitch ring & penalty arc accents
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.strokeRect(36, 36, 440, 440);
+    ctx.beginPath();
+    ctx.arc(256, 62, 64, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(256, 450, 64, 1.15 * Math.PI, 1.85 * Math.PI);
+    ctx.stroke();
+  } else {
+    // Gem Grab: Stylized desert mine sandstone courtyard with glowing purple Gem Mine rings
+    ctx.fillStyle = '#c8834a';
+    ctx.fillRect(0, 0, 512, 512);
+
+    const step = 64;
+    for (let y = 0; y < 512; y += step) {
+      for (let x = 0; x < 512; x += step) {
+        const even = ((x / step) + (y / step)) % 2 === 0;
+        ctx.fillStyle = even ? '#d89358' : '#c27b44';
+        ctx.fillRect(x, y, step, step);
+        ctx.strokeStyle = 'rgba(72, 32, 18, 0.22)';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x + 1.5, y + 1.5, step - 3, step - 3);
+      }
+    }
+
+    // Glowing amethyst Gem Mine plaza aura in center
+    const glow = ctx.createRadialGradient(256, 256, 22, 256, 256, 240);
+    glow.addColorStop(0.0, 'rgba(220, 110, 255, 0.52)');
+    glow.addColorStop(0.42, 'rgba(136, 56, 214, 0.20)');
+    glow.addColorStop(1.0, 'rgba(54, 22, 58, 0.44)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, 512, 512);
+
+    // Painted purple crystal energy rings & minecart tracks
+    ctx.strokeStyle = 'rgba(232, 130, 255, 0.62)';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.arc(256, 256, 118, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(255, 218, 102, 0.36)';
+    ctx.lineWidth = 4;
+    ctx.setLineDash([18, 14]);
+    ctx.beginPath();
+    ctx.arc(256, 256, 178, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
-
-  // Soft sunlit center plaza glow
-  const glow = ctx.createRadialGradient(256, 256, 20, 256, 256, 240);
-  glow.addColorStop(0.0, 'rgba(148, 232, 255, 0.42)');
-  glow.addColorStop(0.55, 'rgba(72, 165, 255, 0.12)');
-  glow.addColorStop(1.0, 'rgba(18, 56, 128, 0.38)');
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, 512, 512);
-
-  // Painted cartoon arena rings on floor
-  ctx.strokeStyle = 'rgba(255, 220, 96, 0.42)';
-  ctx.lineWidth = 7;
-  ctx.beginPath();
-  ctx.arc(256, 256, 118, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
-  ctx.lineWidth = 4;
-  ctx.setLineDash([18, 14]);
-  ctx.beginPath();
-  ctx.arc(256, 256, 178, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -291,18 +349,112 @@ function createCrystalCluster(colorHex: number, emissiveHex: number, scale = 1):
   return g;
 }
 
-/**
- * Builds the lively Brawl Stars-style animated cartoon lobby stage:
- * sky dome, spinning comic sunburst, stylized courtyard floor, multi-tier hero podium,
- * desert canyon mesas, drifting clouds, swaying bushes, and floating gems/stars.
- */
-export function buildAnimatedPreviewStage(): PreviewStageHandle {
-  const group = new THREE.Group();
+function createStadiumGoalProp(): THREE.Group {
+  const g = new THREE.Group();
+  const postMat = new THREE.MeshToonMaterial({ color: 0xf4f8ff });
+  const accentMat = new THREE.MeshToonMaterial({ color: 0x29a8ff });
+  const netMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.45,
+  });
 
-  // 1. Vibrant cartoon sky dome
+  const width = 5.4;
+  const height = 2.4;
+  const depth = 1.6;
+  const postGeo = new THREE.CylinderGeometry(0.11, 0.11, height, 10);
+  const leftPost = new THREE.Mesh(postGeo, postMat);
+  leftPost.position.set(-width / 2, height / 2, 0);
+  g.add(leftPost);
+
+  const rightPost = new THREE.Mesh(postGeo, postMat);
+  rightPost.position.set(width / 2, height / 2, 0);
+  g.add(rightPost);
+
+  const crossBar = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, width + 0.22, 10), accentMat);
+  crossBar.rotation.z = Math.PI / 2;
+  crossBar.position.set(0, height, 0);
+  g.add(crossBar);
+
+  const netBack = new THREE.Mesh(new THREE.PlaneGeometry(width, height, 10, 5), netMat);
+  netBack.position.set(0, height / 2, -depth);
+  g.add(netBack);
+
+  const netTop = new THREE.Mesh(new THREE.PlaneGeometry(width, depth, 10, 3), netMat);
+  netTop.rotation.x = Math.PI / 2;
+  netTop.position.set(0, height, -depth / 2);
+  g.add(netTop);
+
+  const netSideGeo = new THREE.PlaneGeometry(depth, height, 3, 5);
+  const netL = new THREE.Mesh(netSideGeo, netMat);
+  netL.rotation.y = Math.PI / 2;
+  netL.position.set(-width / 2, height / 2, -depth / 2);
+  g.add(netL);
+
+  const netR = new THREE.Mesh(netSideGeo, netMat);
+  netR.rotation.y = -Math.PI / 2;
+  netR.position.set(width / 2, height / 2, -depth / 2);
+  g.add(netR);
+
+  return g;
+}
+
+function createFloodlightTower(sideSign: number): THREE.Group {
+  const g = new THREE.Group();
+  const poleMat = new THREE.MeshToonMaterial({ color: 0x3b4d6b });
+  const headMat = new THREE.MeshToonMaterial({ color: 0x1d2940 });
+  const lampMat = new THREE.MeshBasicMaterial({ color: 0xfff8c9 });
+
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.30, 7.6, 8), poleMat);
+  pole.position.y = 3.8;
+  g.add(pole);
+
+  const head = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.15, 0.45), headMat);
+  head.position.set(0, 7.7, 0.1);
+  head.rotation.x = 0.28;
+  head.rotation.y = -sideSign * 0.35;
+  g.add(head);
+
+  const lampPanel = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.85), lampMat);
+  lampPanel.position.set(0, 0, 0.24);
+  head.add(lampPanel);
+
+  return g;
+}
+
+function createFloatingBallProp(scale = 1): THREE.Object3D {
+  const glb = cloneModel('brawl_ball', false);
+  if (glb) {
+    glb.scale.setScalar(scale * 1.15);
+    return glb;
+  }
+  const fallback = new THREE.Group();
+  const sphere = new THREE.Mesh(
+    new THREE.SphereGeometry(0.36 * scale, 14, 12),
+    new THREE.MeshToonMaterial({ color: 0xffffff }),
+  );
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.36 * scale, 0.045 * scale, 8, 20),
+    new THREE.MeshBasicMaterial({ color: 0xffd43b }),
+  );
+  fallback.add(sphere, ring);
+  return fallback;
+}
+
+/**
+ * Builds the mode-specific Brawl Stars-style animated cartoon lobby stage:
+ * - Gem Grab: Twilight canyon sky, desert stone Gem Mine courtyard, crystal clusters, mesas, floating gems.
+ * - Brawl Ball: Sunny stadium sky, striped soccer turf pitch with white lines, 3D goalpost & net, floodlight towers, floating 3D Brawl Balls.
+ */
+export function buildAnimatedPreviewStage(gameMode: GameMode = 'gem-grab'): PreviewStageHandle {
+  const group = new THREE.Group();
+  const isBall = gameMode === 'brawl-ball';
+
+  // 1. Vibrant mode-themed cartoon sky dome
   const skyDome = new THREE.Mesh(
     new THREE.SphereGeometry(48, 24, 16),
-    new THREE.MeshBasicMaterial({ map: createSkyGradientTexture(), side: THREE.BackSide, depthWrite: false }),
+    new THREE.MeshBasicMaterial({ map: createSkyGradientTexture(gameMode), side: THREE.BackSide, depthWrite: false }),
   );
   group.add(skyDome);
 
@@ -310,7 +462,7 @@ export function buildAnimatedPreviewStage(): PreviewStageHandle {
   const sunburst = new THREE.Mesh(
     new THREE.PlaneGeometry(24, 24),
     new THREE.MeshBasicMaterial({
-      map: createSunburstTexture(),
+      map: createSunburstTexture(gameMode),
       transparent: true,
       opacity: 0.92,
       depthWrite: false,
@@ -320,36 +472,36 @@ export function buildAnimatedPreviewStage(): PreviewStageHandle {
   sunburst.position.set(0, 2.5, -16);
   group.add(sunburst);
 
-  // 3. Stylized cartoon arena courtyard floor beneath podium
+  // 3. Mode-specific stylized floor beneath podium
   const floorY = -0.46;
   const courtyard = new THREE.Mesh(
     new THREE.CircleGeometry(30, 48),
-    new THREE.MeshLambertMaterial({ map: createLobbyFloorTexture() }),
+    new THREE.MeshLambertMaterial({ map: createLobbyFloorTexture(gameMode) }),
   );
   courtyard.rotation.x = -Math.PI / 2;
   courtyard.position.y = floorY;
   group.add(courtyard);
 
-  // Outer cartoon grass/canyon turf apron around courtyard edge
+  // Outer apron ring matching mode theme
   const turfRing = new THREE.Mesh(
     new THREE.RingGeometry(11.5, 44, 48),
-    new THREE.MeshLambertMaterial({ color: 0x3ec66b }),
+    new THREE.MeshLambertMaterial({ color: isBall ? 0x249644 : 0x995234 }),
   );
   turfRing.rotation.x = -Math.PI / 2;
   turfRing.position.y = floorY - 0.02;
   group.add(turfRing);
 
-  // 4. Upgraded Multi-Tier Hero Podium + Counter-Rotating Energy Rings + Stage Glow
+  // 4. Multi-Tier Hero Podium themed to mode (Purple/Gold Gem Mine vs Emerald/Gold Stadium)
   const baseTier = new THREE.Mesh(
     new THREE.CylinderGeometry(2.15, 2.48, 0.24, 32),
-    new THREE.MeshToonMaterial({ color: 0x19366e }),
+    new THREE.MeshToonMaterial({ color: isBall ? 0x165e36 : 0x2f185e }),
   );
   baseTier.position.y = -0.35;
   group.add(baseTier);
 
   const mainPedestal = new THREE.Mesh(
     new THREE.CylinderGeometry(1.62, 1.88, 0.34, 32),
-    new THREE.MeshToonMaterial({ color: 0x2656a8 }),
+    new THREE.MeshToonMaterial({ color: isBall ? 0x249954 : 0x5d28a8 }),
   );
   mainPedestal.position.y = -0.17;
   group.add(mainPedestal);
@@ -365,10 +517,10 @@ export function buildAnimatedPreviewStage(): PreviewStageHandle {
   const outerHoloRing = new THREE.Mesh(
     new THREE.RingGeometry(2.38, 2.54, 40),
     new THREE.MeshBasicMaterial({
-      color: 0x56ecff,
+      color: isBall ? 0x7eff9b : 0xe366ff,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.78,
       depthWrite: false,
     }),
   );
@@ -389,9 +541,9 @@ export function buildAnimatedPreviewStage(): PreviewStageHandle {
   const spotCone = new THREE.Mesh(
     new THREE.ConeGeometry(2.2, 7.2, 24, 1, true),
     new THREE.MeshBasicMaterial({
-      color: 0x9be8ff,
+      color: isBall ? 0xc2ffcf : 0xe09eff,
       transparent: true,
-      opacity: 0.09,
+      opacity: 0.10,
       side: THREE.DoubleSide,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
@@ -400,61 +552,173 @@ export function buildAnimatedPreviewStage(): PreviewStageHandle {
   spotCone.position.set(0, 3.4, 0);
   group.add(spotCone);
 
-  // 5. Stylized Cartoon Canyon Mesas / Rolling Hills framing the horizon
-  const mesaColors = [0xd98048, 0xc86b3a, 0xe89b5a, 0x3eb868, 0x2ea059];
-  const mesaSpecs: Array<[number, number, number, number, number, number]> = [
-    [-11.5, -13.0, 2.8, 3.6, 4.4, 0],
-    [-6.8, -14.8, 2.2, 2.9, 3.4, 2],
-    [7.2, -14.5, 2.5, 3.2, 3.9, 1],
-    [11.8, -12.6, 3.0, 3.8, 4.8, 0],
-    [-9.2, -9.8, 1.5, 2.1, 1.8, 3],
-    [9.4, -9.6, 1.6, 2.2, 2.0, 4],
-  ];
-  for (const [x, z, rTop, rBot, h, ci] of mesaSpecs) {
-    const mesa = new THREE.Mesh(
-      new THREE.CylinderGeometry(rTop, rBot, h, 8),
-      new THREE.MeshToonMaterial({ color: mesaColors[ci] }),
-    );
-    mesa.position.set(x, floorY + h / 2 - 0.1, z);
-    mesa.rotation.y = x * 0.3;
-    group.add(mesa);
-    // Warm sunlit cap on desert mesas
-    if (ci <= 2) {
-      const cap = new THREE.Mesh(
-        new THREE.CylinderGeometry(rTop * 0.96, rTop * 1.03, 0.32, 8),
-        new THREE.MeshToonMaterial({ color: 0xf4bc72 }),
+  const swayProps: Array<{ obj: THREE.Object3D; phase: number }> = [];
+  const floaters: Array<{ obj: THREE.Object3D; baseY: number; amp: number; speed: number; phase: number }> = [];
+
+  if (isBall) {
+    // 5B. Brawl Ball Stadium Scenery: 3D Goalpost & Net, Stadium Stands, Floodlight Towers & Flags!
+    const goalProp = createStadiumGoalProp();
+    goalProp.position.set(0, floorY, -7.8);
+    group.add(goalProp);
+
+    const towerL = createFloodlightTower(-1);
+    towerL.position.set(-7.6, floorY, -10.8);
+    group.add(towerL);
+    const towerR = createFloodlightTower(1);
+    towerR.position.set(7.6, floorY, -10.8);
+    group.add(towerR);
+
+    // Colorful cartoon stadium bleacher walls framing left & right background
+    const standSpecs: Array<[number, number, number, number]> = [
+      [-9.8, -12.6, 0.28, 0x29a8ff],
+      [9.8, -12.6, -0.28, 0xff4757],
+    ];
+    for (const [sx, sz, rotY, bannerColor] of standSpecs) {
+      const stand = new THREE.Group();
+      const base = new THREE.Mesh(
+        new THREE.BoxGeometry(7.2, 2.2, 2.0),
+        new THREE.MeshToonMaterial({ color: 0x3b4d70 }),
       );
-      cap.position.set(x, floorY + h - 0.08, z);
-      cap.rotation.y = x * 0.3;
-      group.add(cap);
+      base.position.y = 1.1;
+      stand.add(base);
+      const banner = new THREE.Mesh(
+        new THREE.BoxGeometry(7.3, 0.55, 2.08),
+        new THREE.MeshToonMaterial({ color: bannerColor }),
+      );
+      banner.position.y = 2.25;
+      stand.add(banner);
+      stand.position.set(sx, floorY, sz);
+      stand.rotation.y = rotY;
+      group.add(stand);
+    }
+
+    // Swaying corner flags & bushes
+    const flagSpecs: Array<[number, number, number]> = [
+      [-4.6, -4.4, 0x29a8ff],
+      [4.6, -4.4, 0xff4757],
+      [-5.9, -7.2, 0xffd43b],
+      [5.9, -7.2, 0xffd43b],
+    ];
+    for (let i = 0; i < flagSpecs.length; i++) {
+      const [fx, fz, col] = flagSpecs[i];
+      const flagGrp = new THREE.Group();
+      const pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.05, 0.05, 1.8, 6),
+        new THREE.MeshToonMaterial({ color: 0xffffff }),
+      );
+      pole.position.y = 0.9;
+      const pennant = new THREE.Mesh(
+        new THREE.BoxGeometry(0.62, 0.36, 0.05),
+        new THREE.MeshToonMaterial({ color: col }),
+      );
+      pennant.position.set(0.32, 1.58, 0);
+      flagGrp.add(pole, pennant);
+      flagGrp.position.set(fx, floorY, fz);
+      group.add(flagGrp);
+      swayProps.push({ obj: flagGrp, phase: i * 1.3 });
+    }
+
+    // Floating spinning 3D Brawl Balls & Gold Stars
+    const starGeo = createStarGeo(0.24, 0.11, 0.08);
+    const starMat = new THREE.MeshToonMaterial({ color: 0xffdf42, emissive: 0x6b4700 });
+    const ballFloats: Array<[number, number, number, boolean, number]> = [
+      [-3.3, 1.85, -2.9, true, 0.92],
+      [3.4, 2.05, -3.1, true, 0.88],
+      [-4.9, 3.1, -5.8, false, 1.05],
+      [5.0, 2.8, -5.6, true, 0.95],
+      [-2.2, 3.4, -6.5, false, 0.85],
+      [2.3, 3.3, -6.6, false, 0.9],
+    ];
+    for (let i = 0; i < ballFloats.length; i++) {
+      const [fx, fy, fz, isBallProp, sc] = ballFloats[i];
+      const obj = isBallProp
+        ? createFloatingBallProp(sc)
+        : new THREE.Mesh(starGeo, starMat);
+      if (!isBallProp) obj.scale.setScalar(sc);
+      obj.position.set(fx, fy, fz);
+      group.add(obj);
+      floaters.push({ obj, baseY: fy, amp: 0.24, speed: 1.7 + (i % 3) * 0.35, phase: i * 1.15 });
+    }
+  } else {
+    // 5A. Gem Grab Scenery: Canyon Mesas, Glowing Purple/Cyan Crystal Clusters, Swaying Bushes & Floating Gems
+    const mesaColors = [0xd98048, 0xc86b3a, 0xe89b5a, 0x5e349e, 0x452280];
+    const mesaSpecs: Array<[number, number, number, number, number, number]> = [
+      [-11.5, -13.0, 2.8, 3.6, 4.4, 0],
+      [-6.8, -14.8, 2.2, 2.9, 3.4, 2],
+      [7.2, -14.5, 2.5, 3.2, 3.9, 1],
+      [11.8, -12.6, 3.0, 3.8, 4.8, 0],
+      [-9.2, -9.8, 1.5, 2.1, 1.8, 3],
+      [9.4, -9.6, 1.6, 2.2, 2.0, 4],
+    ];
+    for (const [x, z, rTop, rBot, h, ci] of mesaSpecs) {
+      const mesa = new THREE.Mesh(
+        new THREE.CylinderGeometry(rTop, rBot, h, 8),
+        new THREE.MeshToonMaterial({ color: mesaColors[ci] }),
+      );
+      mesa.position.set(x, floorY + h / 2 - 0.1, z);
+      mesa.rotation.y = x * 0.3;
+      group.add(mesa);
+      if (ci <= 2) {
+        const cap = new THREE.Mesh(
+          new THREE.CylinderGeometry(rTop * 0.96, rTop * 1.03, 0.32, 8),
+          new THREE.MeshToonMaterial({ color: 0xf4bc72 }),
+        );
+        cap.position.set(x, floorY + h - 0.08, z);
+        cap.rotation.y = x * 0.3;
+        group.add(cap);
+      }
+    }
+
+    const bushPositions: Array<[number, number, number]> = [
+      [-4.4, -3.4, 1.05],
+      [-5.6, -5.2, 1.35],
+      [4.6, -3.6, 1.08],
+      [5.8, -5.4, 1.3],
+      [-3.1, -6.8, 0.95],
+      [3.3, -6.9, 0.98],
+    ];
+    for (let i = 0; i < bushPositions.length; i++) {
+      const [bx, bz, sc] = bushPositions[i];
+      const bush = createCartoonBushProp(sc);
+      bush.position.set(bx, floorY, bz);
+      group.add(bush);
+      swayProps.push({ obj: bush, phase: i * 1.1 });
+    }
+
+    const crystalLeft = createCrystalCluster(0xd654ff, 0x5c0ea8, 1.35);
+    crystalLeft.position.set(-4.0, floorY, -5.0);
+    group.add(crystalLeft);
+
+    const crystalRight = createCrystalCluster(0x3ce8ff, 0x0b6699, 1.22);
+    crystalRight.position.set(4.1, floorY, -5.2);
+    group.add(crystalRight);
+
+    const crystalBack = createCrystalCluster(0xe66bff, 0x6e00bd, 1.55);
+    crystalBack.position.set(0, floorY, -8.5);
+    group.add(crystalBack);
+
+    const starGeo = createStarGeo(0.24, 0.11, 0.08);
+    const gemGeo = getGemCrystalGeo();
+    const starMat = new THREE.MeshToonMaterial({ color: 0xffdf42, emissive: 0x6b4700 });
+    const gemMat = new THREE.MeshToonMaterial({ color: 0xe66bff, emissive: 0x6e00bd });
+
+    const floaterSpecs: Array<[number, number, number, boolean, number]> = [
+      [-3.1, 1.9, -2.8, false, 1.05],
+      [3.2, 2.2, -3.0, true, 0.95],
+      [-4.8, 3.0, -5.8, true, 1.15],
+      [4.9, 2.7, -5.6, false, 1.12],
+      [-2.0, 3.5, -6.5, true, 0.85],
+      [2.3, 3.4, -6.8, false, 0.95],
+    ];
+    for (let i = 0; i < floaterSpecs.length; i++) {
+      const [fx, fy, fz, isStar, sc] = floaterSpecs[i];
+      const m = new THREE.Mesh(isStar ? starGeo : gemGeo, isStar ? starMat : gemMat);
+      m.position.set(fx, fy, fz);
+      m.scale.setScalar(sc);
+      group.add(m);
+      floaters.push({ obj: m, baseY: fy, amp: 0.22, speed: 1.6 + (i % 3) * 0.35, phase: i * 1.15 });
     }
   }
-
-  // 6. Flanking cartoon crystal clusters & swaying bushes (cleanly framing brawler)
-  const swayBushes: Array<{ obj: THREE.Object3D; phase: number }> = [];
-  const bushPositions: Array<[number, number, number]> = [
-    [-4.4, -3.4, 1.05],
-    [-5.6, -5.2, 1.35],
-    [4.6, -3.6, 1.08],
-    [5.8, -5.4, 1.3],
-    [-3.1, -6.8, 0.95],
-    [3.3, -6.9, 0.98],
-  ];
-  for (let i = 0; i < bushPositions.length; i++) {
-    const [bx, bz, sc] = bushPositions[i];
-    const bush = createCartoonBushProp(sc);
-    bush.position.set(bx, floorY, bz);
-    group.add(bush);
-    swayBushes.push({ obj: bush, phase: i * 1.1 });
-  }
-
-  const crystalLeft = createCrystalCluster(0xd654ff, 0x5c0ea8, 1.25);
-  crystalLeft.position.set(-4.0, floorY, -5.0);
-  group.add(crystalLeft);
-
-  const crystalRight = createCrystalCluster(0x3ce8ff, 0x0b6699, 1.15);
-  crystalRight.position.set(4.1, floorY, -5.2);
-  group.add(crystalRight);
 
   // 7. Animated Drifting Cartoon Clouds across sky
   const clouds: Array<{ obj: THREE.Group; speed: number; baseY: number; phase: number }> = [];
@@ -473,30 +737,6 @@ export function buildAnimatedPreviewStage(): PreviewStageHandle {
     clouds.push({ obj: cloud, speed, baseY: cy, phase: i * 1.4 });
   }
 
-  // 8. Floating bobbing cartoon Gems & Golden Stars orbiting softly behind stage!
-  const floaters: Array<{ obj: THREE.Mesh; baseY: number; amp: number; speed: number; phase: number }> = [];
-  const starGeo = createStarGeo(0.24, 0.11, 0.08);
-  const gemGeo = getGemCrystalGeo();
-  const starMat = new THREE.MeshToonMaterial({ color: 0xffdf42, emissive: 0x6b4700 });
-  const gemMat = new THREE.MeshToonMaterial({ color: 0xe66bff, emissive: 0x6e00bd });
-
-  const floaterSpecs: Array<[number, number, number, boolean, number]> = [
-    [-3.1, 1.9, -2.8, false, 1.0],
-    [3.2, 2.2, -3.0, true, 0.95],
-    [-4.8, 3.0, -5.8, true, 1.15],
-    [4.9, 2.7, -5.6, false, 1.1],
-    [-2.0, 3.5, -6.5, true, 0.85],
-    [2.3, 3.4, -6.8, false, 0.9],
-  ];
-  for (let i = 0; i < floaterSpecs.length; i++) {
-    const [fx, fy, fz, isStar, sc] = floaterSpecs[i];
-    const m = new THREE.Mesh(isStar ? starGeo : gemGeo, isStar ? starMat : gemMat);
-    m.position.set(fx, fy, fz);
-    m.scale.setScalar(sc);
-    group.add(m);
-    floaters.push({ obj: m, baseY: fy, amp: 0.22, speed: 1.6 + (i % 3) * 0.35, phase: i * 1.15 });
-  }
-
   return {
     group,
     update(clock: number, dt: number) {
@@ -509,7 +749,7 @@ export function buildAnimatedPreviewStage(): PreviewStageHandle {
         if (c.obj.position.x > 16) c.obj.position.x = -16;
         c.obj.position.y = c.baseY + Math.sin(clock * 0.9 + c.phase) * 0.12;
       }
-      for (const b of swayBushes) {
+      for (const b of swayProps) {
         b.obj.rotation.z = Math.sin(clock * 2.2 + b.phase) * 0.045;
       }
       for (const f of floaters) {
