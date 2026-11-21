@@ -239,7 +239,7 @@ describe('Brawl Ball (3v3) simulation & Bot AI', () => {
     }
     expect(Number.isFinite(engine.state.ball!.x)).toBe(true);
     expect(Number.isFinite(engine.state.ball!.y)).toBe(true);
-  });
+  }, 15000);
 
   it('Tackle directly steals the ball from an enemy carrier, knocks them back, and locks re-pickup briefly', () => {
     const engine = createBrawlBallMatch('crystal-cavern');

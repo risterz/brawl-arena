@@ -90,6 +90,373 @@ function createSunburstTexture(gameMode: GameMode): THREE.CanvasTexture {
   return tex;
 }
 
+interface RealisticSoccerPitchAssets {
+  pitchMap: THREE.CanvasTexture;
+  pitchBump: THREE.CanvasTexture;
+  outerMap: THREE.CanvasTexture;
+  outerBump: THREE.CanvasTexture;
+}
+
+let cachedSoccerPitchAssets: RealisticSoccerPitchAssets | null = null;
+
+function createSeededRand(seed: number): () => number {
+  let s = seed >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+/**
+ * Generates high-res (1024x1024) realistic mowed stadium turf + bump textures
+ * with micro grass blades, soil flecks, weathered chalk lines, and podium AO shadow.
+ */
+function getRealisticSoccerPitchAssets(): RealisticSoccerPitchAssets {
+  if (cachedSoccerPitchAssets) return cachedSoccerPitchAssets;
+
+  const size = 1024;
+  const diffCanvas = document.createElement('canvas');
+  diffCanvas.width = size;
+  diffCanvas.height = size;
+  const dCtx = diffCanvas.getContext('2d')!;
+
+  const bumpCanvas = document.createElement('canvas');
+  bumpCanvas.width = size;
+  bumpCanvas.height = size;
+  const bCtx = bumpCanvas.getContext('2d')!;
+
+  const rand = createSeededRand(90210);
+
+  // 1. Realistic lawn-mower stadium grass stripes (12 alternating cut directions)
+  const stripes = 12;
+  const stripeH = size / stripes;
+  for (let i = 0; i < stripes; i++) {
+    const y0 = i * stripeH;
+    const light = i % 2 === 0;
+    const g = dCtx.createLinearGradient(0, y0, 0, y0 + stripeH);
+    if (light) {
+      g.addColorStop(0.0, '#368a39');
+      g.addColorStop(0.5, '#3f9640');
+      g.addColorStop(1.0, '#348638');
+    } else {
+      g.addColorStop(0.0, '#276d2d');
+      g.addColorStop(0.5, '#2d7632');
+      g.addColorStop(1.0, '#25682b');
+    }
+    dCtx.fillStyle = g;
+    dCtx.fillRect(0, y0, size, stripeH + 1);
+  }
+
+  // Base neutral bump
+  bCtx.fillStyle = '#787878';
+  bCtx.fillRect(0, 0, size, size);
+
+  // 2. Subtle organic chlorophyll & soil moisture patches so turf never looks flat plastic
+  for (let i = 0; i < 160; i++) {
+    const px = rand() * size;
+    const py = rand() * size;
+    const rx = 28 + rand() * 88;
+    const ry = 20 + rand() * 64;
+    const warm = rand() > 0.55;
+    dCtx.fillStyle = warm
+      ? `rgba(116, 152, 54, ${(0.04 + rand() * 0.06).toFixed(3)})`
+      : `rgba(22, 64, 26, ${(0.05 + rand() * 0.07).toFixed(3)})`;
+    dCtx.beginPath();
+    dCtx.ellipse(px, py, rx, ry, rand() * Math.PI, 0, Math.PI * 2);
+    dCtx.fill();
+  }
+
+  // 3. 26,000 fine directional micro grass blades + soil specks + matching bump relief
+  const bladeColors = ['#1c5221', '#276b2c', '#358536', '#4ba344', '#63b850', '#5a4e32'];
+  for (let i = 0; i < 26000; i++) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const len = 3 + rand() * 8.5;
+    const ang = -Math.PI / 2 + (rand() - 0.5) * 1.15;
+    const dx = Math.cos(ang) * len;
+    const dy = Math.sin(ang) * len;
+
+    const r = rand();
+    const col =
+      r < 0.04
+        ? bladeColors[5]
+        : r < 0.24
+          ? bladeColors[0]
+          : r < 0.52
+            ? bladeColors[1]
+            : r < 0.78
+              ? bladeColors[2]
+              : r < 0.93
+                ? bladeColors[3]
+                : bladeColors[4];
+    dCtx.strokeStyle = col;
+    dCtx.globalAlpha = 0.28 + rand() * 0.44;
+    dCtx.lineWidth = 0.9 + rand() * 1.25;
+    dCtx.beginPath();
+    dCtx.moveTo(x, y);
+    dCtx.lineTo(x + dx, y + dy);
+    dCtx.stroke();
+
+    // Matching micro-height stroke on bump map
+    const lum = r < 0.35 ? 60 : r < 0.75 ? 155 : 225;
+    bCtx.strokeStyle = `rgb(${lum},${lum},${lum})`;
+    bCtx.globalAlpha = 0.32;
+    bCtx.lineWidth = 1.2;
+    bCtx.beginPath();
+    bCtx.moveTo(x, y);
+    bCtx.lineTo(x + dx, y + dy);
+    bCtx.stroke();
+  }
+  dCtx.globalAlpha = 1;
+  bCtx.globalAlpha = 1;
+
+  // 4. Subtle worn grass patina around goalmouth & center pitch
+  const wearSpots: Array<[number, number, number, number]> = [
+    [size * 0.5, size * 0.22, 110, 44],
+    [size * 0.5, size * 0.5, 95, 95],
+  ];
+  for (const [wx, wy, rx, ry] of wearSpots) {
+    const wg = dCtx.createRadialGradient(wx, wy, 10, wx, wy, Math.max(rx, ry));
+    wg.addColorStop(0.0, 'rgba(130, 118, 70, 0.17)');
+    wg.addColorStop(0.6, 'rgba(92, 118, 56, 0.08)');
+    wg.addColorStop(1.0, 'rgba(92, 118, 56, 0.0)');
+    dCtx.fillStyle = wg;
+    dCtx.beginPath();
+    dCtx.ellipse(wx, wy, rx, ry, 0, 0, Math.PI * 2);
+    dCtx.fill();
+  }
+
+  // 5. Realistic painted stadium chalk pitch markings (with natural grass-bleed texture)
+  dCtx.save();
+  dCtx.strokeStyle = 'rgba(244, 248, 242, 0.88)';
+  dCtx.fillStyle = 'rgba(244, 248, 242, 0.88)';
+  dCtx.lineWidth = 11;
+  dCtx.lineJoin = 'round';
+  dCtx.lineCap = 'round';
+
+  // Touchlines & goal lines
+  dCtx.strokeRect(56, 62, size - 112, size - 124);
+
+  // Halfway line
+  dCtx.beginPath();
+  dCtx.moveTo(56, size / 2);
+  dCtx.lineTo(size - 56, size / 2);
+  dCtx.stroke();
+
+  // Center circle & spot
+  dCtx.beginPath();
+  dCtx.arc(size / 2, size / 2, 165, 0, Math.PI * 2);
+  dCtx.stroke();
+
+  // North (behind podium) penalty box, 6-yard goal box, penalty spot & D-arc
+  dCtx.strokeRect(size * 0.24, 62, size * 0.52, 224);
+  dCtx.strokeRect(size * 0.36, 62, size * 0.28, 92);
+  dCtx.beginPath();
+  dCtx.arc(size / 2, 224, 8, 0, Math.PI * 2);
+  dCtx.fill();
+  dCtx.beginPath();
+  dCtx.arc(size / 2, 224, 108, 0.20 * Math.PI, 0.80 * Math.PI);
+  dCtx.stroke();
+
+  // South penalty box accent
+  dCtx.strokeRect(size * 0.24, size - 286, size * 0.52, 224);
+  dCtx.beginPath();
+  dCtx.arc(size / 2, size - 224, 108, 1.20 * Math.PI, 1.80 * Math.PI);
+  dCtx.stroke();
+
+  // Corner quarter-arcs
+  const cornerR = 32;
+  dCtx.beginPath();
+  dCtx.arc(56, 62, cornerR, 0, Math.PI / 2);
+  dCtx.stroke();
+  dCtx.beginPath();
+  dCtx.arc(size - 56, 62, cornerR, Math.PI / 2, Math.PI);
+  dCtx.stroke();
+
+  // Light grass grain poked back through white chalk so paint looks sprayed onto real grass
+  for (let i = 0; i < 2400; i++) {
+    const gx = 48 + rand() * (size - 96);
+    const gy = 54 + rand() * (size - 108);
+    dCtx.fillStyle = rand() > 0.5 ? 'rgba(38, 108, 42, 0.24)' : 'rgba(58, 138, 58, 0.20)';
+    dCtx.fillRect(gx, gy, 2.2, 4.5);
+  }
+  dCtx.restore();
+
+  // 6. Natural contact ambient-occlusion shadow directly beneath the hero podium
+  const ao = dCtx.createRadialGradient(size / 2, size / 2, 56, size / 2, size / 2, 148);
+  ao.addColorStop(0.0, 'rgba(6, 24, 10, 0.62)');
+  ao.addColorStop(0.55, 'rgba(8, 30, 12, 0.28)');
+  ao.addColorStop(1.0, 'rgba(8, 30, 12, 0.0)');
+  dCtx.fillStyle = ao;
+  dCtx.fillRect(size / 2 - 155, size / 2 - 155, 310, 310);
+
+  const pitchMap = new THREE.CanvasTexture(diffCanvas);
+  pitchMap.colorSpace = THREE.SRGBColorSpace;
+  pitchMap.anisotropy = 8;
+
+  const pitchBump = new THREE.CanvasTexture(bumpCanvas);
+  pitchBump.anisotropy = 4;
+
+  // 7. Tiled realistic outer stadium grass apron texture (512x512 seamless)
+  const oSize = 512;
+  const oDiff = document.createElement('canvas');
+  oDiff.width = oSize;
+  oDiff.height = oSize;
+  const odCtx = oDiff.getContext('2d')!;
+
+  const oBump = document.createElement('canvas');
+  oBump.width = oSize;
+  oBump.height = oSize;
+  const obCtx = oBump.getContext('2d')!;
+
+  odCtx.fillStyle = '#25662a';
+  odCtx.fillRect(0, 0, oSize, oSize);
+  obCtx.fillStyle = '#787878';
+  obCtx.fillRect(0, 0, oSize, oSize);
+
+  for (let i = 0; i < 6500; i++) {
+    const x = rand() * oSize;
+    const y = rand() * oSize;
+    const len = 3 + rand() * 7;
+    const ang = -Math.PI / 2 + (rand() - 0.5) * 1.2;
+    const dx = Math.cos(ang) * len;
+    const dy = Math.sin(ang) * len;
+    odCtx.strokeStyle = bladeColors[Math.floor(rand() * 5)];
+    odCtx.globalAlpha = 0.32 + rand() * 0.38;
+    odCtx.lineWidth = 1.1;
+    odCtx.beginPath();
+    odCtx.moveTo(x, y);
+    odCtx.lineTo(x + dx, y + dy);
+    odCtx.stroke();
+
+    const lum = rand() > 0.5 ? 190 : 70;
+    obCtx.strokeStyle = `rgb(${lum},${lum},${lum})`;
+    obCtx.globalAlpha = 0.3;
+    obCtx.beginPath();
+    obCtx.moveTo(x, y);
+    obCtx.lineTo(x + dx, y + dy);
+    obCtx.stroke();
+  }
+  odCtx.globalAlpha = 1;
+  obCtx.globalAlpha = 1;
+
+  const outerMap = new THREE.CanvasTexture(oDiff);
+  outerMap.colorSpace = THREE.SRGBColorSpace;
+  outerMap.wrapS = THREE.RepeatWrapping;
+  outerMap.wrapT = THREE.RepeatWrapping;
+  outerMap.repeat.set(10, 10);
+
+  const outerBump = new THREE.CanvasTexture(oBump);
+  outerBump.wrapS = THREE.RepeatWrapping;
+  outerBump.wrapT = THREE.RepeatWrapping;
+  outerBump.repeat.set(10, 10);
+
+  cachedSoccerPitchAssets = { pitchMap, pitchBump, outerMap, outerBump };
+  return cachedSoccerPitchAssets;
+}
+
+/** Builds a lightweight 3-blade curved 3D grass tuft geometry for instanced stadium turf. */
+function createGrassTuftGeometry(): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const bladeCount = 3;
+
+  for (let i = 0; i < bladeCount; i++) {
+    const ang = (i / bladeCount) * Math.PI * 2 + 0.35;
+    const cos = Math.cos(ang);
+    const sin = Math.sin(ang);
+    // Tangent width vector perpendicular to blade lean
+    const tx = -sin;
+    const tz = cos;
+
+    const halfW = 0.036;
+    const midW = 0.022;
+    const hMid = 0.11;
+    const hTop = 0.23;
+    const bendMid = 0.035;
+    const bendTop = 0.095;
+
+    const bL = [tx * -halfW, 0, tz * -halfW];
+    const bR = [tx * halfW, 0, tz * halfW];
+    const mL = [cos * bendMid + tx * -midW, hMid, sin * bendMid + tz * -midW];
+    const mR = [cos * bendMid + tx * midW, hMid, sin * bendMid + tz * midW];
+    const tip = [cos * bendTop, hTop, sin * bendTop];
+
+    const pushTri = (a: number[], b: number[], c: number[]) => {
+      positions.push(...a, ...b, ...c);
+      // Upward-biased normal for soft natural sunlit grass sheen
+      normals.push(cos * 0.25, 0.94, sin * 0.25);
+      normals.push(cos * 0.25, 0.94, sin * 0.25);
+      normals.push(cos * 0.25, 0.94, sin * 0.25);
+    };
+
+    pushTri(bL, bR, mR);
+    pushTri(bL, mR, mL);
+    pushTri(mL, mR, tip);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  return geo;
+}
+
+/** Scatters ~2,200 realistic instanced 3D grass tufts around the podium and midfield. */
+function createRealisticGrassFieldMesh(floorY: number): THREE.InstancedMesh {
+  const count = 2200;
+  const geo = createGrassTuftGeometry();
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.85,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+  });
+
+  const mesh = new THREE.InstancedMesh(geo, mat, count);
+  const rand = createSeededRand(424242);
+  const dummy = new THREE.Object3D();
+  const col = new THREE.Color();
+
+  let idx = 0;
+  let attempts = 0;
+  while (idx < count && attempts < count * 4) {
+    attempts++;
+    // Concentrate tufts where camera sees real grass depth (foreground, flanks, around goal)
+    const x = (rand() - 0.5) * 24.5;
+    const z = -12.5 + rand() * 17.5;
+    const distCenter = Math.hypot(x, z);
+    // Keep hero podium base & chalk inner ring clear
+    if (distCenter < 2.48) continue;
+
+    dummy.position.set(x, floorY - 0.01, z);
+    dummy.rotation.set(
+      (rand() - 0.5) * 0.14,
+      rand() * Math.PI * 2,
+      (rand() - 0.5) * 0.14,
+    );
+    const scXZ = 0.75 + rand() * 0.72;
+    const scY = 0.58 + rand() * 0.68;
+    dummy.scale.set(scXZ, scY, scXZ);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(idx, dummy.matrix);
+
+    // Match grass tuft hue to mowed stadium turf stripes!
+    const stripeIdx = Math.floor(((z + 15.0) / 28.0) * 12);
+    const lightStripe = ((stripeIdx % 2) + 2) % 2 === 0;
+    const h = (lightStripe ? 0.31 : 0.335) + (rand() - 0.5) * 0.03;
+    const s = 0.48 + rand() * 0.14;
+    const l = (lightStripe ? 0.38 : 0.29) + (rand() - 0.5) * 0.07;
+    col.setHSL(h, s, l);
+    mesh.setColorAt(idx, col);
+    idx++;
+  }
+
+  mesh.count = idx;
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  return mesh;
+}
+
 function createLobbyFloorTexture(gameMode: GameMode): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
@@ -472,24 +839,71 @@ export function buildAnimatedPreviewStage(gameMode: GameMode = 'gem-grab'): Prev
   sunburst.position.set(0, 2.5, -16);
   group.add(sunburst);
 
-  // 3. Mode-specific stylized floor beneath podium
+  // 3. Mode-specific floor beneath podium (Realistic PBR grass stadium pitch for Brawl Ball!)
   const floorY = -0.46;
-  const courtyard = new THREE.Mesh(
-    new THREE.CircleGeometry(30, 48),
-    new THREE.MeshLambertMaterial({ map: createLobbyFloorTexture(gameMode) }),
-  );
-  courtyard.rotation.x = -Math.PI / 2;
-  courtyard.position.y = floorY;
-  group.add(courtyard);
+  if (isBall) {
+    const pitchAssets = getRealisticSoccerPitchAssets();
 
-  // Outer apron ring matching mode theme
-  const turfRing = new THREE.Mesh(
-    new THREE.RingGeometry(11.5, 44, 48),
-    new THREE.MeshLambertMaterial({ color: isBall ? 0x249644 : 0x995234 }),
-  );
-  turfRing.rotation.x = -Math.PI / 2;
-  turfRing.position.y = floorY - 0.02;
-  group.add(turfRing);
+    // Realistic tiled outer stadium turf surround
+    const outerTurf = new THREE.Mesh(
+      new THREE.PlaneGeometry(96, 96),
+      new THREE.MeshStandardMaterial({
+        map: pitchAssets.outerMap,
+        bumpMap: pitchAssets.outerBump,
+        bumpScale: 0.05,
+        roughness: 0.92,
+        metalness: 0.0,
+      }),
+    );
+    outerTurf.rotation.x = -Math.PI / 2;
+    outerTurf.position.y = floorY - 0.025;
+    group.add(outerTurf);
+
+    // Main realistic mowed grass soccer pitch with bump micro-relief & chalk lines
+    const stadiumPitch = new THREE.Mesh(
+      new THREE.PlaneGeometry(26, 28),
+      new THREE.MeshStandardMaterial({
+        map: pitchAssets.pitchMap,
+        bumpMap: pitchAssets.pitchBump,
+        bumpScale: 0.065,
+        roughness: 0.87,
+        metalness: 0.02,
+      }),
+    );
+    stadiumPitch.rotation.x = -Math.PI / 2;
+    stadiumPitch.position.set(0, floorY, -1.0);
+    group.add(stadiumPitch);
+
+    // 2,200 instanced 3D grass tufts across foreground & midfield!
+    group.add(createRealisticGrassFieldMesh(floorY));
+
+    // Low dark stadium touchline perimeter boards framing the far grass edge
+    const boardMat = new THREE.MeshStandardMaterial({ color: 0x1a263a, roughness: 0.55, metalness: 0.25 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0x2ecc71, roughness: 0.45 });
+    const farBoard = new THREE.Mesh(new THREE.BoxGeometry(27, 0.72, 0.35), boardMat);
+    farBoard.position.set(0, floorY + 0.36, -14.8);
+    group.add(farBoard);
+    const farTrim = new THREE.Mesh(new THREE.BoxGeometry(27, 0.14, 0.38), trimMat);
+    farTrim.position.set(0, floorY + 0.72, -14.8);
+    group.add(farTrim);
+  } else {
+    const courtyard = new THREE.Mesh(
+      new THREE.CircleGeometry(30, 48),
+      new THREE.MeshLambertMaterial({ map: createLobbyFloorTexture(gameMode) }),
+    );
+    courtyard.rotation.x = -Math.PI / 2;
+    courtyard.position.y = floorY;
+    group.add(courtyard);
+
+    // Outer canyon apron ring matching Gem Grab theme
+    const turfRing = new THREE.Mesh(
+      new THREE.RingGeometry(11.5, 44, 48),
+      new THREE.MeshLambertMaterial({ color: 0x995234 }),
+    );
+    turfRing.rotation.x = -Math.PI / 2;
+    turfRing.position.y = floorY - 0.02;
+    group.add(turfRing);
+  }
 
   // 4. Multi-Tier Hero Podium themed to mode (Purple/Gold Gem Mine vs Emerald/Gold Stadium)
   const baseTier = new THREE.Mesh(

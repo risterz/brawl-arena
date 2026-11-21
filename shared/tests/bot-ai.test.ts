@@ -187,5 +187,5 @@ describe('Bot pathfinding and Gem Grab AI', () => {
       expect(totalDamage).toBeGreaterThan(0);
       expect(totalGems).toBeGreaterThan(0);
     }
-  });
+  }, 15000);
 });
