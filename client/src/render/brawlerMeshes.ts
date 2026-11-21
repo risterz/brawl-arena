@@ -91,7 +91,13 @@ export function createBrawlerMesh(
       if (child instanceof THREE.Mesh) {
         const mats = Array.isArray(child.material) ? child.material : [child.material];
         for (const m of mats) {
-          if (m) materials.push(m);
+          if (m) {
+            if (m.userData.baseOpacity === undefined) {
+              m.userData.baseOpacity = m.opacity;
+              m.userData.baseTransparent = m.transparent;
+            }
+            materials.push(m);
+          }
         }
       }
     });
@@ -137,11 +143,14 @@ export function createBrawlerMesh(
       materials,
       hasAnimations: mixer !== null,
       setOpacity(alpha: number) {
-        const transparent = alpha < 0.99;
         for (const m of materials) {
-          if (m.transparent !== transparent || m.opacity !== alpha) {
-            m.transparent = transparent;
-            m.opacity = alpha;
+          const baseOpacity = typeof m.userData.baseOpacity === 'number' ? m.userData.baseOpacity : 1;
+          const baseTransparent = Boolean(m.userData.baseTransparent);
+          const targetOpacity = baseOpacity * alpha;
+          const targetTransparent = baseTransparent || targetOpacity < 0.99;
+          if (m.transparent !== targetTransparent || Math.abs(m.opacity - targetOpacity) > 0.001) {
+            m.transparent = targetTransparent;
+            m.opacity = targetOpacity;
             m.needsUpdate = true;
           }
         }
