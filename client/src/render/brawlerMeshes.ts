@@ -41,11 +41,13 @@ export function createBrawlerMesh(
   const accentMat = addMat(cfg.accentColor);
   const skinMat = addMat('#ffdbb5');
   const darkMat = addMat('#1d2233');
+  const steelMat = addMat('#7a8ca8');
+  const woodMat = addMat('#8c5327');
   const whiteMat = addMat('#ffffff');
 
   // Ground shadow disc
   const shadow = new THREE.Mesh(
-    new THREE.CircleGeometry(cfg.radius * 1.08, 20),
+    new THREE.CircleGeometry(cfg.radius * 1.1, 20),
     new THREE.MeshBasicMaterial({ color: 0x0a1020, transparent: true, opacity: 0.34, depthWrite: false }),
   );
   shadow.rotation.x = -Math.PI / 2;
@@ -80,48 +82,62 @@ export function createBrawlerMesh(
       transparent: true,
       opacity: 0.28,
       depthWrite: false,
-      wireframe: false,
     }),
   );
   shieldDome.position.y = 0.65;
   shieldDome.visible = false;
   root.add(shieldDome);
 
-  // Scale body slightly by role (Golem chunky, Vex sleek)
   const bulk = brawlerId === 'golem' ? 1.24 : brawlerId === 'vex' ? 0.92 : 1.0;
 
-  // Feet
+  // Sculpted boots with toe caps
   for (const side of [-0.18, 0.18]) {
-    const foot = new THREE.Mesh(new THREE.CapsuleGeometry(0.11 * bulk, 0.12, 4, 8), darkMat);
-    foot.position.set(side * bulk, 0.16, 0);
-    foot.castShadow = true;
-    bodyGroup.add(foot);
+    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.24 * bulk, 0.18, 0.18 * bulk), darkMat);
+    boot.position.set(0.04 * bulk, 0.1, side * bulk);
+    boot.castShadow = true;
+    bodyGroup.add(boot);
+    const cuff = new THREE.Mesh(new THREE.CylinderGeometry(0.11 * bulk, 0.12 * bulk, 0.14, 8), accentMat);
+    cuff.position.set(0, 0.22, side * bulk);
+    bodyGroup.add(cuff);
   }
 
-  // Torso
+  // Torso jacket + collar + belt buckle
   const torso = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.32 * bulk, 0.36 * bulk, 0.62 * bulk, 12),
+    new THREE.CylinderGeometry(0.31 * bulk, 0.36 * bulk, 0.62 * bulk, 12),
     primaryMat,
   );
   torso.position.y = 0.56 * bulk;
   torso.castShadow = true;
   bodyGroup.add(torso);
 
-  // Belt / trim
   const belt = new THREE.Mesh(
     new THREE.CylinderGeometry(0.35 * bulk, 0.36 * bulk, 0.12, 12),
-    accentMat,
+    darkMat,
   );
   belt.position.y = 0.38 * bulk;
   bodyGroup.add(belt);
 
-  // Head
+  const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.14, 0.18), accentMat);
+  buckle.position.set(0.33 * bulk, 0.38 * bulk, 0);
+  bodyGroup.add(buckle);
+
+  // Articulated shoulders & arms
+  for (const side of [-1, 1]) {
+    const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.15 * bulk, 10, 8), primaryMat);
+    shoulder.position.set(0.02, 0.78 * bulk, side * 0.36 * bulk);
+    bodyGroup.add(shoulder);
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.085 * bulk, 0.22 * bulk, 4, 8), skinMat);
+    arm.rotation.z = -Math.PI / 2.6;
+    arm.position.set(0.18 * bulk, 0.66 * bulk, side * 0.36 * bulk);
+    bodyGroup.add(arm);
+  }
+
+  // Head + expressive eyes & brow
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.3 * bulk, 14, 12), skinMat);
   head.position.y = 1.06 * bulk;
   head.castShadow = true;
   bodyGroup.add(head);
 
-  // Expressive eyes facing +X (model forward = +X to match Math.atan2(dy, dx))
   for (const side of [-0.11, 0.11]) {
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.055 * bulk, 8, 8), darkMat);
     eye.position.set(0.24 * bulk, 1.08 * bulk, side * bulk);
@@ -131,96 +147,137 @@ export function createBrawlerMesh(
     bodyGroup.add(glint);
   }
 
-  // Brawler-specific iconic silhouettes & weapons (facing +X)
+  // Iconic detailed weapons & headgear per brawler (facing +X)
   if (brawlerId === 'buck') {
-    // Ranger hat + bandana + chunky shotgun
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.48, 0.07, 14), darkMat);
+    // Ranger hat with gold band + double-barrel wooden-stock shotgun
+    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.5, 0.07, 14), darkMat);
     brim.position.y = 1.3;
     bodyGroup.add(brim);
+    const hatBand = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.32, 0.07, 12), accentMat);
+    hatBand.position.y = 1.36;
+    bodyGroup.add(hatBand);
     const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.3, 0.24, 12), primaryMat);
-    crown.position.y = 1.44;
+    crown.position.y = 1.48;
     bodyGroup.add(crown);
-    const gun = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.17, 0.18), darkMat);
-    gun.position.set(0.44, 0.62, 0.22);
-    gun.castShadow = true;
-    bodyGroup.add(gun);
-    const muzzle = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.12, 10), accentMat);
-    muzzle.rotation.z = Math.PI / 2;
-    muzzle.position.set(0.82, 0.62, 0.22);
-    bodyGroup.add(muzzle);
+
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, 0.14), woodMat);
+    stock.position.set(0.18, 0.58, 0.24);
+    bodyGroup.add(stock);
+    for (const zOff of [0.19, 0.29]) {
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.62, 10), steelMat);
+      barrel.rotation.z = Math.PI / 2;
+      barrel.position.set(0.56, 0.64, zOff);
+      barrel.castShadow = true;
+      bodyGroup.add(barrel);
+    }
+    const muzzleBand = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.13, 0.2), accentMat);
+    muzzleBand.position.set(0.82, 0.64, 0.24);
+    bodyGroup.add(muzzleBand);
   } else if (brawlerId === 'vex') {
-    // Star visor + sleek sniper rifle + cape
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.12, 0.44), accentMat);
+    // Glowing star visor + scoped long-barrel star rifle + flowing cape
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.13, 0.46), accentMat);
     visor.position.set(0.18, 1.05, 0);
     bodyGroup.add(visor);
-    const rifle = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.075, 1.12, 10), darkMat);
+    const rifle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.068, 1.18, 10), darkMat);
     rifle.rotation.z = Math.PI / 2;
-    rifle.position.set(0.56, 0.62, 0.2);
+    rifle.position.set(0.58, 0.62, 0.22);
     bodyGroup.add(rifle);
-    const tip = new THREE.Mesh(new THREE.OctahedronGeometry(0.1), accentMat);
-    tip.position.set(1.12, 0.62, 0.2);
+    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.32, 8), steelMat);
+    scope.rotation.z = Math.PI / 2;
+    scope.position.set(0.48, 0.75, 0.22);
+    bodyGroup.add(scope);
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.24, 6), accentMat);
+    tip.rotation.z = -Math.PI / 2;
+    tip.position.set(1.22, 0.62, 0.22);
     bodyGroup.add(tip);
-    const cape = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.56, 0.48), accentMat);
+    const cape = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.62, 0.5), accentMat);
     cape.position.set(-0.34, 0.56, 0);
-    cape.rotation.z = 0.22;
+    cape.rotation.z = 0.24;
     bodyGroup.add(cape);
   } else if (brawlerId === 'blaze') {
-    // Spiky golden hair + twin blasters
-    const hair = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.36, 7), accentMat);
-    hair.position.set(-0.04, 1.42, 0);
+    // Dualist golden hair crest + twin detailed revolvers with chambers & grips
+    const hair = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.38, 7), accentMat);
+    hair.position.set(-0.04, 1.44, 0);
     hair.rotation.z = 0.25;
     bodyGroup.add(hair);
-    for (const side of [-0.32, 0.32]) {
-      const pistol = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.13, 0.12), darkMat);
-      pistol.position.set(0.4, 0.62, side);
-      bodyGroup.add(pistol);
-      const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.13), accentMat);
-      barrel.position.set(0.64, 0.62, side);
+    for (const side of [-0.34, 0.34]) {
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.18, 0.08), woodMat);
+      grip.position.set(0.24, 0.55, side);
+      grip.rotation.z = 0.25;
+      bodyGroup.add(grip);
+      const chamber = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.16, 8), steelMat);
+      chamber.rotation.z = Math.PI / 2;
+      chamber.position.set(0.36, 0.65, side);
+      bodyGroup.add(chamber);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.32, 8), accentMat);
+      barrel.rotation.z = Math.PI / 2;
+      barrel.position.set(0.58, 0.67, side);
       bodyGroup.add(barrel);
     }
   } else if (brawlerId === 'golem') {
-    // Horned mask + huge shoulder pads + gauntlets
-    const mask = new THREE.Mesh(new THREE.CylinderGeometry(0.37, 0.39, 0.28, 12), primaryMat);
+    // Horned titan helm + armored pauldrons + spiked power gauntlets
+    const mask = new THREE.Mesh(new THREE.CylinderGeometry(0.37, 0.4, 0.3, 12), primaryMat);
     mask.position.y = 1.38;
     bodyGroup.add(mask);
     for (const side of [-0.3, 0.3]) {
-      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.32, 6), accentMat);
-      horn.position.set(0.05, 1.62, side);
-      horn.rotation.x = side > 0 ? 0.35 : -0.35;
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.095, 0.36, 6), accentMat);
+      horn.position.set(0.06, 1.64, side);
+      horn.rotation.x = side > 0 ? 0.38 : -0.38;
       bodyGroup.add(horn);
-      const gauntlet = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 10), accentMat);
-      gauntlet.position.set(0.42, 0.62, side * 1.45);
+      const pauldron = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.24, 0.26), darkMat);
+      pauldron.position.set(0, 0.96, side * 1.55);
+      bodyGroup.add(pauldron);
+      const gauntlet = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.3, 0.3), accentMat);
+      gauntlet.position.set(0.44, 0.64, side * 1.5);
       gauntlet.castShadow = true;
       bodyGroup.add(gauntlet);
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.16, 5), steelMat);
+      spike.rotation.z = -Math.PI / 2;
+      spike.position.set(0.65, 0.64, side * 1.5);
+      bodyGroup.add(spike);
     }
   } else if (brawlerId === 'mort') {
-    // Alchemist pointed hood + potion tank + glowing flask
-    const hood = new THREE.Mesh(new THREE.ConeGeometry(0.36, 0.48, 10), primaryMat);
-    hood.position.set(-0.04, 1.42, 0);
+    // Alchemist hood + glass backpack tank with green liquid + corked flask in hand
+    const hood = new THREE.Mesh(new THREE.ConeGeometry(0.37, 0.5, 10), primaryMat);
+    hood.position.set(-0.04, 1.44, 0);
     hood.rotation.z = 0.2;
     bodyGroup.add(hood);
-    const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.45, 10), accentMat);
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.46, 10), accentMat);
     tank.position.set(-0.36, 0.65, 0);
     bodyGroup.add(tank);
-    const flask = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 10), accentMat);
-    flask.position.set(0.42, 0.68, 0.28);
-    bodyGroup.add(flask);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.08, 10), woodMat);
+    cap.position.set(-0.36, 0.9, 0);
+    bodyGroup.add(cap);
+    const flaskBulb = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.16, 0.2, 10), accentMat);
+    flaskBulb.position.set(0.42, 0.66, 0.28);
+    bodyGroup.add(flaskBulb);
+    const flaskCork = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.1, 8), woodMat);
+    flaskCork.position.set(0.42, 0.81, 0.28);
+    bodyGroup.add(flaskCork);
   } else if (brawlerId === 'lumi') {
-    // Star crest hat + glowing synth guitar
-    const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.08, 12), accentMat);
+    // Star crest hat + V-body glowing synth guitar
+    const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.43, 0.43, 0.08, 12), accentMat);
     hat.position.y = 1.32;
     bodyGroup.add(hat);
-    const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.18), primaryMat);
+    const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.19), primaryMat);
     star.position.y = 1.48;
     bodyGroup.add(star);
-    const guitarBody = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.26, 0.12), accentMat);
-    guitarBody.position.set(0.36, 0.56, 0.18);
-    guitarBody.rotation.y = 0.35;
+    const guitarBody = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.28, 0.11), accentMat);
+    guitarBody.position.set(0.36, 0.58, 0.2);
+    guitarBody.rotation.y = 0.32;
     bodyGroup.add(guitarBody);
-    const neck = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.09, 0.08), darkMat);
-    neck.position.set(0.68, 0.6, 0.04);
-    neck.rotation.y = 0.35;
+    const wing = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.34, 4), primaryMat);
+    wing.rotation.z = Math.PI / 2;
+    wing.position.set(0.16, 0.68, 0.28);
+    bodyGroup.add(wing);
+    const neck = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.085, 0.075), darkMat);
+    neck.position.set(0.72, 0.62, 0.04);
+    neck.rotation.y = 0.32;
     bodyGroup.add(neck);
+    const headStock = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.13, 0.08), accentMat);
+    headStock.position.set(1.02, 0.63, -0.06);
+    headStock.rotation.y = 0.32;
+    bodyGroup.add(headStock);
   }
 
   return {

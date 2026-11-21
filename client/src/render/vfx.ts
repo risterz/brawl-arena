@@ -1,12 +1,19 @@
 import * as THREE from 'three';
 import {
   AttackSpec,
-  BRAWLERS,
   GemState,
   HazardZoneState,
   MatchState,
   ProjectileState,
 } from '@brawl-arena/shared';
+import {
+  createBombVisual,
+  createFlameGeometry,
+  createGemCrystalVisual,
+  createHealCrossGeometry,
+  createProjectileVisual,
+  createSparkShardGeometry,
+} from './projectileMeshes';
 
 interface Particle {
   mesh: THREE.Mesh;
@@ -16,6 +23,9 @@ interface Particle {
   life: number;
   maxLife: number;
   gravity: number;
+  spin: number;
+  growRate: number;
+  kind: 'rubble' | 'flame' | 'spark' | 'ring' | 'cross';
 }
 
 export interface AimTelegraphInput {
@@ -29,29 +39,32 @@ export interface AimTelegraphInput {
 
 export class VfxManager {
   private group: THREE.Group;
-  private projMeshes: Map<number, THREE.Mesh> = new Map();
-  private hazardMeshes: Map<number, THREE.Mesh> = new Map();
+  private projMeshes: Map<number, { obj: THREE.Group; lobbed: boolean; brawlerId: string }> = new Map();
+  private hazardMeshes: Map<number, { obj: THREE.Group; kind: 'puddle' | 'bomb' }> = new Map();
   private gemMeshes: Map<number, THREE.Group> = new Map();
   private particles: Particle[] = [];
   private telegraphGroup: THREE.Group;
   private telegraphMesh: THREE.Mesh | null = null;
   private lastTelegraphKey = '';
 
-  private boxGeo = new THREE.BoxGeometry(0.24, 0.24, 0.24);
-  private sphereGeo = new THREE.SphereGeometry(1, 10, 10);
-  private gemGeo = new THREE.OctahedronGeometry(0.32, 0);
-  private gemRingGeo = new THREE.RingGeometry(0.32, 0.45, 16);
+  // Shared sculpted particle geometries (zero plain spheres!)
+  private plankGeo = new THREE.BoxGeometry(0.32, 0.1, 0.16);
+  private ringGeo = new THREE.RingGeometry(0.28, 0.46, 20);
+  private flameGeo = createFlameGeometry();
+  private crossGeo = createHealCrossGeometry();
+  private sparkGeo = createSparkShardGeometry();
 
   constructor(parent: THREE.Scene) {
     this.group = new THREE.Group();
     this.telegraphGroup = new THREE.Group();
     this.group.add(this.telegraphGroup);
     parent.add(this.group);
+    this.ringGeo.rotateX(-Math.PI / 2);
   }
 
   public clear(): void {
-    for (const m of this.projMeshes.values()) this.group.remove(m);
-    for (const m of this.hazardMeshes.values()) this.group.remove(m);
+    for (const p of this.projMeshes.values()) this.group.remove(p.obj);
+    for (const h of this.hazardMeshes.values()) this.group.remove(h.obj);
     for (const g of this.gemMeshes.values()) this.group.remove(g);
     for (const p of this.particles) this.group.remove(p.mesh);
     this.projMeshes.clear();
@@ -66,53 +79,189 @@ export class VfxManager {
     }
   }
 
-  public spawnWallRubble(tx: number, ty: number): void {
-    const cx = tx + 0.5;
-    const cz = ty + 0.5;
-    const colors = [0xd49b54, 0x9b6830, 0xffe0a3];
-    for (let i = 0; i < 8; i++) {
-      const ang = (i / 8) * Math.PI * 2 + Math.random() * 0.4;
-      const spd = 2.2 + Math.random() * 3.0;
-      const mesh = new THREE.Mesh(
-        this.boxGeo,
-        new THREE.MeshToonMaterial({ color: colors[i % colors.length] }),
-      );
-      mesh.position.set(cx, 0.55 + Math.random() * 0.4, cz);
-      mesh.scale.setScalar(0.7 + Math.random() * 0.7);
+  /** Fiery multi-tongue muzzle flash oriented along shot direction. */
+  public spawnMuzzleFlash(x: number, y: number, angle: number, isSuper: boolean): void {
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const count = isSuper ? 5 : 3;
+    for (let i = 0; i < count; i++) {
+      const spread = (i - (count - 1) / 2) * 0.28;
+      const a = angle + spread;
+      const mat = new THREE.MeshBasicMaterial({
+        color: i === Math.floor(count / 2) ? 0xfff3b0 : isSuper ? 0xffd43b : 0xff7b24,
+        transparent: true,
+        opacity: 0.92,
+      });
+      const mesh = new THREE.Mesh(this.flameGeo, mat);
+      mesh.position.set(x + cos * 0.52, 0.68, y + sin * 0.52);
+      mesh.rotation.order = 'YXZ';
+      mesh.rotation.y = -a + Math.PI / 2;
+      mesh.rotation.x = Math.PI / 2;
+      const s = isSuper ? 0.9 : 0.58;
+      mesh.scale.set(s * 0.7, s, s * 0.7);
       this.group.add(mesh);
       this.particles.push({
         mesh,
-        vx: Math.cos(ang) * spd,
-        vy: 4.0 + Math.random() * 3.2,
-        vz: Math.sin(ang) * spd,
-        life: 0.55 + Math.random() * 0.25,
-        maxLife: 0.75,
-        gravity: 16,
+        vx: Math.cos(a) * (isSuper ? 3.8 : 2.4),
+        vy: 0.3,
+        vz: Math.sin(a) * (isSuper ? 3.8 : 2.4),
+        life: 0.14,
+        maxLife: 0.14,
+        gravity: 0,
+        spin: 0,
+        growRate: 1.5,
+        kind: 'flame',
       });
     }
   }
 
-  public spawnHitBurst(x: number, y: number, colorHex: number, count = 6): void {
-    for (let i = 0; i < count; i++) {
-      const ang = Math.random() * Math.PI * 2;
-      const spd = 1.6 + Math.random() * 2.8;
+  /** Shattered wooden planks + fiery burst ring when cover walls break. */
+  public spawnWallRubble(tx: number, ty: number): void {
+    const cx = tx + 0.5;
+    const cz = ty + 0.5;
+    const colors = [0xd49b54, 0x9b6830, 0x5d4037];
+    for (let i = 0; i < 9; i++) {
+      const ang = (i / 9) * Math.PI * 2 + Math.random() * 0.35;
+      const spd = 2.2 + Math.random() * 3.4;
       const mesh = new THREE.Mesh(
-        this.sphereGeo,
-        new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.9 }),
+        this.plankGeo,
+        new THREE.MeshToonMaterial({ color: colors[i % colors.length] }),
       );
-      mesh.position.set(x, 0.7, y);
-      mesh.scale.setScalar(0.11 + Math.random() * 0.08);
+      mesh.position.set(cx, 0.55 + Math.random() * 0.4, cz);
+      mesh.scale.setScalar(0.75 + Math.random() * 0.65);
       this.group.add(mesh);
       this.particles.push({
         mesh,
         vx: Math.cos(ang) * spd,
-        vy: 2.2 + Math.random() * 2.0,
+        vy: 4.2 + Math.random() * 3.0,
         vz: Math.sin(ang) * spd,
-        life: 0.32 + Math.random() * 0.16,
-        maxLife: 0.45,
-        gravity: 10,
+        life: 0.58 + Math.random() * 0.22,
+        maxLife: 0.78,
+        gravity: 16,
+        spin: 8,
+        growRate: 0,
+        kind: 'rubble',
       });
     }
+    this.spawnShockRing(cx, cz, 0xffb703, 2.4, 0.34);
+  }
+
+  /** Directional spark shards + crisp impact shockwave ring. */
+  public spawnHitBurst(x: number, y: number, colorHex: number, count = 6): void {
+    for (let i = 0; i < count; i++) {
+      const ang = (i / count) * Math.PI * 2 + Math.random() * 0.4;
+      const spd = 2.6 + Math.random() * 2.8;
+      const mesh = new THREE.Mesh(
+        this.sparkGeo,
+        new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.95 }),
+      );
+      mesh.position.set(x, 0.72, y);
+      mesh.rotation.y = -ang;
+      mesh.scale.setScalar(0.85 + Math.random() * 0.5);
+      this.group.add(mesh);
+      this.particles.push({
+        mesh,
+        vx: Math.cos(ang) * spd,
+        vy: 1.8 + Math.random() * 1.6,
+        vz: Math.sin(ang) * spd,
+        life: 0.26 + Math.random() * 0.12,
+        maxLife: 0.36,
+        gravity: 8,
+        spin: 0,
+        growRate: -1.4,
+        kind: 'spark',
+      });
+    }
+    this.spawnShockRing(x, y, colorHex, 1.35, 0.22);
+  }
+
+  /** Sculpted fiery teardrop flame burst + expanding shockwave ring for kills/explosions. */
+  public spawnExplosion(x: number, y: number, primaryColor = 0xff6b2b, scale = 1.0): void {
+    const flameColors = [0xfff3b0, 0xffd43b, primaryColor, 0xff4757];
+    for (let i = 0; i < 8; i++) {
+      const ang = (i / 8) * Math.PI * 2 + Math.random() * 0.3;
+      const spd = (1.6 + Math.random() * 2.4) * scale;
+      const mesh = new THREE.Mesh(
+        this.flameGeo,
+        new THREE.MeshBasicMaterial({
+          color: flameColors[i % flameColors.length],
+          transparent: true,
+          opacity: 0.92,
+        }),
+      );
+      mesh.position.set(x + Math.cos(ang) * 0.18, 0.42, y + Math.sin(ang) * 0.18);
+      mesh.scale.set(0.95 * scale, (1.1 + Math.random() * 0.6) * scale, 0.95 * scale);
+      this.group.add(mesh);
+      this.particles.push({
+        mesh,
+        vx: Math.cos(ang) * spd,
+        vy: (2.6 + Math.random() * 2.2) * scale,
+        vz: Math.sin(ang) * spd,
+        life: 0.42 + Math.random() * 0.18,
+        maxLife: 0.58,
+        gravity: 3.5,
+        spin: 0,
+        growRate: 0.8,
+        kind: 'flame',
+      });
+    }
+    this.spawnHitBurst(x, y, 0xffe066, 8);
+    this.spawnShockRing(x, y, primaryColor, 2.8 * scale, 0.36);
+  }
+
+  /** Rising 3D extruded emerald '+' heal crosses + expanding green aura ring. */
+  public spawnHealBurst(x: number, y: number): void {
+    for (let i = 0; i < 4; i++) {
+      const ang = (i / 4) * Math.PI * 2 + Math.random() * 0.4;
+      const mesh = new THREE.Mesh(
+        this.crossGeo,
+        new THREE.MeshBasicMaterial({ color: 0x4dff9b, transparent: true, opacity: 0.95 }),
+      );
+      mesh.position.set(x + Math.cos(ang) * 0.35, 0.75 + i * 0.12, y + Math.sin(ang) * 0.35);
+      mesh.scale.setScalar(0.85);
+      this.group.add(mesh);
+      this.particles.push({
+        mesh,
+        vx: Math.cos(ang) * 0.55,
+        vy: 1.9 + Math.random() * 0.6,
+        vz: Math.sin(ang) * 0.55,
+        life: 0.52,
+        maxLife: 0.52,
+        gravity: 0,
+        spin: 4.5,
+        growRate: -0.4,
+        kind: 'cross',
+      });
+    }
+    this.spawnShockRing(x, y, 0x4dff9b, 1.8, 0.32);
+  }
+
+  private spawnShockRing(x: number, y: number, colorHex: number, growRate: number, duration: number): void {
+    const mesh = new THREE.Mesh(
+      this.ringGeo,
+      new THREE.MeshBasicMaterial({
+        color: colorHex,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+      }),
+    );
+    mesh.position.set(x, 0.09, y);
+    mesh.scale.setScalar(0.5);
+    this.group.add(mesh);
+    this.particles.push({
+      mesh,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      life: duration,
+      maxLife: duration,
+      gravity: 0,
+      spin: 0,
+      growRate,
+      kind: 'ring',
+    });
   }
 
   public updateTelegraph(input: AimTelegraphInput | null): void {
@@ -131,7 +280,7 @@ export class VfxManager {
       const mat = new THREE.MeshBasicMaterial({
         color,
         transparent: true,
-        opacity: input.isSuper ? 0.4 : 0.28,
+        opacity: input.isSuper ? 0.42 : 0.28,
         side: THREE.DoubleSide,
         depthWrite: false,
       });
@@ -158,7 +307,7 @@ export class VfxManager {
     }
 
     if (input.spec.shape === 'circle') {
-      const dist = input.spec.range * 0.78;
+      const dist = input.spec.isLeap ? input.spec.range * 0.85 : input.spec.range * 0.78;
       this.telegraphGroup.position.set(
         input.x + Math.cos(input.angle) * dist,
         0.07,
@@ -172,85 +321,132 @@ export class VfxManager {
   }
 
   public sync(state: MatchState, dt: number): void {
-    this.syncProjectiles(state.projectiles);
-    this.syncHazards(state.hazards);
+    this.syncProjectiles(state.projectiles, dt);
+    this.syncHazards(state.hazards, state.elapsed);
     this.syncGems(state.gems, state.elapsed);
     this.stepParticles(dt);
   }
 
-  private syncProjectiles(projectiles: ProjectileState[]): void {
+  private syncProjectiles(projectiles: ProjectileState[], dt: number): void {
     const seen = new Set<number>();
     for (const p of projectiles) {
       seen.add(p.id);
-      let mesh = this.projMeshes.get(p.id);
-      if (!mesh) {
-        const cfg = BRAWLERS[p.brawlerId];
-        const color = p.isHeal
-          ? 0x5effb1
-          : p.isSuper
-            ? 0xffd43b
-            : p.team === 'blue'
-              ? cfg.accentColor
-              : '#ff5266';
-        mesh = new THREE.Mesh(
-          this.sphereGeo,
-          new THREE.MeshBasicMaterial({ color }),
-        );
-        mesh.scale.set(p.radius * 1.15, p.radius * 0.9, p.radius * 1.15);
-        this.group.add(mesh);
-        this.projMeshes.set(p.id, mesh);
+      let entry = this.projMeshes.get(p.id);
+      if (!entry) {
+        const obj = createProjectileVisual({
+          brawlerId: p.brawlerId,
+          team: p.team,
+          isSuper: p.isSuper,
+          isHeal: p.isHeal,
+          radius: p.radius,
+        });
+        this.group.add(obj);
+        entry = { obj, lobbed: p.lobbed, brawlerId: p.brawlerId };
+        this.projMeshes.set(p.id, entry);
       }
+
       let py = 0.72;
       if (p.lobbed) {
         const t = Math.min(1, p.elapsed / Math.max(0.05, p.flightDuration));
         py = 0.7 + Math.sin(t * Math.PI) * 3.1;
+        // Tumble corked potion flask end-over-end in mid-air
+        entry.obj.rotation.x += dt * 9.5;
+        entry.obj.rotation.z += dt * 6.5;
+      } else {
+        const heading = Math.atan2(p.vy, p.vx);
+        entry.obj.rotation.y = -heading;
       }
-      mesh.position.set(p.x, py, p.y);
+      entry.obj.position.set(p.x, py, p.y);
     }
 
-    for (const [id, mesh] of this.projMeshes) {
+    for (const [id, entry] of this.projMeshes) {
       if (!seen.has(id)) {
-        this.group.remove(mesh);
+        this.group.remove(entry.obj);
         this.projMeshes.delete(id);
       }
     }
   }
 
-  private syncHazards(hazards: HazardZoneState[]): void {
+  private createPuddleVisual(h: HazardZoneState): THREE.Group {
+    const grp = new THREE.Group();
+    const baseColor = h.team === 'blue' ? 0x34e878 : 0xff4d6d;
+    const rimColor = h.team === 'blue' ? 0x9bff4d : 0xff9eb0;
+
+    const pool = new THREE.Mesh(
+      new THREE.CircleGeometry(h.radius, 22),
+      new THREE.MeshBasicMaterial({ color: baseColor, transparent: true, opacity: 0.48, depthWrite: false }),
+    );
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.y = 0.05;
+    grp.add(pool);
+
+    const rim = new THREE.Mesh(
+      new THREE.RingGeometry(h.radius * 0.86, h.radius * 1.02, 22),
+      new THREE.MeshBasicMaterial({ color: rimColor, side: THREE.DoubleSide, transparent: true, opacity: 0.78, depthWrite: false }),
+    );
+    rim.rotation.x = -Math.PI / 2;
+    rim.position.y = 0.06;
+    grp.add(rim);
+
+    // Bubbling cauldron droplets (3 sculpted rings/domes that animate vertically)
+    const bubbleGeo = new THREE.TorusGeometry(0.14, 0.05, 6, 10);
+    bubbleGeo.rotateX(Math.PI / 2);
+    const bubbleMat = new THREE.MeshBasicMaterial({ color: rimColor, transparent: true, opacity: 0.85 });
+    for (let i = 0; i < 4; i++) {
+      const ang = (i / 4) * Math.PI * 2 + 0.4;
+      const dist = h.radius * (0.28 + (i % 2) * 0.28);
+      const b = new THREE.Mesh(bubbleGeo, bubbleMat);
+      b.name = `puddle-bubble-${i}`;
+      b.position.set(Math.cos(ang) * dist, 0.14, Math.sin(ang) * dist);
+      grp.add(b);
+    }
+
+    grp.position.set(h.x, 0, h.y);
+    return grp;
+  }
+
+  private syncHazards(hazards: HazardZoneState[], elapsed: number): void {
     const seen = new Set<number>();
     for (const h of hazards) {
       seen.add(h.id);
-      let mesh = this.hazardMeshes.get(h.id);
-      if (!mesh) {
-        if (h.kind === 'puddle') {
-          const geo = new THREE.CircleGeometry(h.radius, 22);
-          geo.rotateX(-Math.PI / 2);
-          const color = h.team === 'blue' ? 0x45f584 : 0xff5a6e;
-          mesh = new THREE.Mesh(
-            geo,
-            new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.48, depthWrite: false }),
-          );
-          mesh.position.set(h.x, 0.06, h.y);
-        } else {
-          mesh = new THREE.Mesh(
-            this.sphereGeo,
-            new THREE.MeshToonMaterial({ color: 0xff4d6d, emissive: 0x550011 }),
-          );
-          mesh.scale.setScalar(0.32);
-          mesh.position.set(h.x, 0.35, h.y);
-        }
-        this.group.add(mesh);
-        this.hazardMeshes.set(h.id, mesh);
+      let entry = this.hazardMeshes.get(h.id);
+      if (!entry) {
+        const obj = h.kind === 'puddle' ? this.createPuddleVisual(h) : createBombVisual();
+        if (h.kind === 'bomb') obj.position.set(h.x, 0, h.y);
+        this.group.add(obj);
+        entry = { obj, kind: h.kind };
+        this.hazardMeshes.set(h.id, entry);
       }
       if (h.kind === 'bomb') {
-        const pulse = 1 + Math.sin((1 - h.remaining / Math.max(0.1, h.duration)) * 24) * 0.22;
-        mesh.scale.setScalar(0.32 * pulse);
+        const pulse = 1 + Math.sin((1 - h.remaining / Math.max(0.1, h.duration)) * 26) * 0.16;
+        entry.obj.scale.setScalar(pulse);
+        const flame = entry.obj.getObjectByName('bomb-flame');
+        if (flame) {
+          flame.scale.set(
+            0.42 + Math.sin(elapsed * 32) * 0.1,
+            0.34 + Math.cos(elapsed * 28) * 0.12,
+            0.42 + Math.sin(elapsed * 32) * 0.1,
+          );
+        }
+      } else {
+        // Animate acid puddle bubbles popping upward
+        for (let i = 0; i < 4; i++) {
+          const b = entry.obj.getObjectByName(`puddle-bubble-${i}`);
+          if (b) {
+            const phase = (elapsed * 2.4 + i * 0.7) % 1;
+            b.position.y = 0.08 + phase * 0.36;
+            b.scale.setScalar(0.55 + Math.sin(phase * Math.PI) * 0.75);
+          }
+        }
       }
     }
 
-    for (const [id, mesh] of this.hazardMeshes) {
+    for (const [id, entry] of this.hazardMeshes) {
       if (!seen.has(id)) {
-        this.group.remove(mesh);
+        if (entry.kind === 'bomb') {
+          this.spawnExplosion(entry.obj.position.x, entry.obj.position.z, 0xff5ea8, 0.9);
+        }
+        this.group.remove(entry.obj);
         this.hazardMeshes.delete(id);
       }
     }
@@ -262,23 +458,7 @@ export class VfxManager {
       seen.add(g.id);
       let grp = this.gemMeshes.get(g.id);
       if (!grp) {
-        grp = new THREE.Group();
-        const crystal = new THREE.Mesh(
-          this.gemGeo,
-          new THREE.MeshToonMaterial({ color: 0xd946ff, emissive: 0x6200b3 }),
-        );
-        crystal.position.y = 0.52;
-        crystal.castShadow = true;
-        grp.add(crystal);
-
-        const ring = new THREE.Mesh(
-          this.gemRingGeo,
-          new THREE.MeshBasicMaterial({ color: 0xf4a8ff, side: THREE.DoubleSide, transparent: true, opacity: 0.72, depthWrite: false }),
-        );
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.y = 0.04;
-        grp.add(ring);
-
+        grp = createGemCrystalVisual();
         this.group.add(grp);
         this.gemMeshes.set(g.id, grp);
       }
@@ -287,8 +467,8 @@ export class VfxManager {
       const gz = g.startY + (g.y - g.startY) * t;
       const popArc = Math.sin(t * Math.PI) * 1.65;
       grp.position.set(gx, 0, gz);
-      const crystal = grp.children[0];
-      crystal.position.y = 0.52 + popArc + Math.sin(elapsed * 4 + g.id) * 0.09;
+      const crystal = grp.getObjectByName('gem-core') ?? grp.children[0];
+      crystal.position.y = 0.56 + popArc + Math.sin(elapsed * 4 + g.id) * 0.1;
       crystal.rotation.y = elapsed * 2.4 + g.id;
     }
 
@@ -308,12 +488,35 @@ export class VfxManager {
         this.group.remove(p.mesh);
         continue;
       }
+      const lifeRatio = p.life / p.maxLife;
       p.vy -= p.gravity * dt;
       p.mesh.position.x += p.vx * dt;
-      p.mesh.position.y = Math.max(0.08, p.mesh.position.y + p.vy * dt);
+      p.mesh.position.y = Math.max(0.07, p.mesh.position.y + p.vy * dt);
       p.mesh.position.z += p.vz * dt;
-      p.mesh.rotation.x += dt * 7;
-      p.mesh.rotation.y += dt * 5;
+
+      if (p.spin !== 0) {
+        if (p.kind === 'cross') {
+          p.mesh.rotation.y += dt * p.spin;
+        } else {
+          p.mesh.rotation.x += dt * p.spin;
+          p.mesh.rotation.y += dt * p.spin * 0.7;
+        }
+      }
+
+      if (p.growRate !== 0) {
+        const s = Math.max(0.05, p.mesh.scale.x + p.growRate * dt);
+        if (p.kind === 'ring') {
+          p.mesh.scale.setScalar(s);
+        } else {
+          p.mesh.scale.setScalar(Math.max(0.05, s));
+        }
+      }
+
+      const mat = p.mesh.material;
+      if (mat instanceof THREE.MeshBasicMaterial && mat.transparent) {
+        mat.opacity = Math.max(0, Math.min(0.95, lifeRatio));
+      }
+
       next.push(p);
     }
     this.particles = next;

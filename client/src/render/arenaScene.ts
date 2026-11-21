@@ -17,6 +17,7 @@ import {
   shouldRenderEventVfx,
   stepCameraFollow,
 } from './perspective';
+import { getGemCrystalGeo } from './projectileMeshes';
 import { AimTelegraphInput, VfxManager } from './vfx';
 
 function createCheckeredGroundTexture(mapId: MapId): THREE.CanvasTexture {
@@ -45,6 +46,20 @@ function createCheckeredGroundTexture(mapId: MapId): THREE.CanvasTexture {
   return tex;
 }
 
+function createLeafBladeGeo(): THREE.BufferGeometry {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.quadraticCurveTo(0.24, 0.28, 0.04, 0.85);
+  shape.quadraticCurveTo(-0.2, 0.34, 0, 0);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.05,
+    bevelEnabled: false,
+  });
+  geo.center();
+  geo.translate(0, 0.38, 0);
+  return geo;
+}
+
 export class ArenaRenderer {
   private canvas: HTMLCanvasElement;
   private renderer: THREE.WebGLRenderer;
@@ -55,7 +70,7 @@ export class ArenaRenderer {
   private breakableMeshes: Map<string, THREE.Object3D> = new Map();
   private bushMeshes: THREE.Object3D[] = [];
   private waterMeshes: THREE.Mesh[] = [];
-  private mineCrystal: THREE.Mesh | null = null;
+  private mineCrystal: THREE.Group | null = null;
   private brawlers: Map<number, { brawlerId: BrawlerId; team: Team; isLocal: boolean; visual: BrawlerVisual }> =
     new Map();
   private vfx: VfxManager;
@@ -202,19 +217,28 @@ export class ArenaRenderer {
     surround.position.set(MAP_WIDTH / 2, -0.05, MAP_HEIGHT / 2);
     this.mapGroup.add(surround);
 
-    // Shared geometries/materials for crisp 3D tile blocks
-    const crateGeo = new THREE.BoxGeometry(0.94, 0.95, 0.94);
-    const crateTopGeo = new THREE.BoxGeometry(0.8, 0.14, 0.8);
+    // Shared detailed crate geometries (banded wooden crate with cross-brace & iron rim)
+    const crateCoreGeo = new THREE.BoxGeometry(0.88, 0.9, 0.88);
+    const crateTrimGeo = new THREE.BoxGeometry(0.95, 0.14, 0.95);
+    const crateBraceGeo = new THREE.BoxGeometry(0.92, 0.12, 0.16);
     const crateMat = new THREE.MeshToonMaterial({ color: mapId === 'crystal-cavern' ? '#c97b36' : '#b88346' });
     const crateTopMat = new THREE.MeshToonMaterial({ color: '#e8a85e' });
+    const crateIronMat = new THREE.MeshToonMaterial({ color: '#46372d' });
 
-    const solidGeo = new THREE.BoxGeometry(0.98, 1.32, 0.98);
-    const solidMat = new THREE.MeshToonMaterial({ color: '#455470' });
-    const solidCapMat = new THREE.MeshToonMaterial({ color: '#6b7f9e' });
+    // Shared octagonal fortress pillar geometries
+    const solidColGeo = new THREE.CylinderGeometry(0.49, 0.54, 1.32, 8);
+    const solidBandGeo = new THREE.CylinderGeometry(0.55, 0.55, 0.16, 8);
+    const solidCapGeo = new THREE.CylinderGeometry(0.4, 0.48, 0.16, 8);
+    const solidMat = new THREE.MeshToonMaterial({ color: '#475978' });
+    const solidBandMat = new THREE.MeshToonMaterial({ color: '#29354d' });
+    const solidCapMat = new THREE.MeshToonMaterial({ color: '#758cb0' });
 
-    const bushGeo = new THREE.ConeGeometry(0.46, 0.95, 6);
-    const bushMat = new THREE.MeshToonMaterial({ color: mapId === 'crystal-cavern' ? '#2ec26c' : '#1fa85c' });
-    const bushTipMat = new THREE.MeshToonMaterial({ color: '#58e38a' });
+    // Shared sculpted curved leaf frond geometry for stealth bushes
+    const leafGeo = createLeafBladeGeo();
+    const bushDarkMat = new THREE.MeshToonMaterial({ color: mapId === 'crystal-cavern' ? '#23a65b' : '#188f4c' });
+    const bushLightMat = new THREE.MeshToonMaterial({ color: '#53e084' });
+    const berryMat = new THREE.MeshBasicMaterial({ color: '#ffd43b' });
+    const berryGeo = new THREE.OctahedronGeometry(0.08, 0);
 
     const waterGeo = new THREE.BoxGeometry(1.0, 0.18, 1.0);
     const waterMat = new THREE.MeshToonMaterial({ color: '#26b6ff', emissive: '#083a5c' });
@@ -227,37 +251,57 @@ export class ArenaRenderer {
 
         if (tile === TileType.WALL_BREAKABLE) {
           const grp = new THREE.Group();
-          const box = new THREE.Mesh(crateGeo, crateMat);
-          box.position.y = 0.475;
-          box.castShadow = true;
-          box.receiveShadow = true;
-          grp.add(box);
-          const cap = new THREE.Mesh(crateTopGeo, crateTopMat);
-          cap.position.y = 0.98;
-          grp.add(cap);
+          const core = new THREE.Mesh(crateCoreGeo, crateMat);
+          core.position.y = 0.46;
+          core.castShadow = true;
+          core.receiveShadow = true;
+          grp.add(core);
+          const bottomTrim = new THREE.Mesh(crateTrimGeo, crateIronMat);
+          bottomTrim.position.y = 0.12;
+          grp.add(bottomTrim);
+          const topTrim = new THREE.Mesh(crateTrimGeo, crateTopMat);
+          topTrim.position.y = 0.92;
+          grp.add(topTrim);
+          const brace = new THREE.Mesh(crateBraceGeo, crateIronMat);
+          brace.position.y = 0.99;
+          brace.rotation.y = Math.PI / 4;
+          grp.add(brace);
           grp.position.set(cx, 0, cz);
           this.mapGroup.add(grp);
           this.breakableMeshes.set(`${tx},${ty}`, grp);
         } else if (tile === TileType.WALL_SOLID) {
           const grp = new THREE.Group();
-          const box = new THREE.Mesh(solidGeo, solidMat);
-          box.position.y = 0.66;
-          box.castShadow = true;
-          box.receiveShadow = true;
-          grp.add(box);
-          const cap = new THREE.Mesh(crateTopGeo, solidCapMat);
-          cap.position.y = 1.35;
+          const col = new THREE.Mesh(solidColGeo, solidMat);
+          col.position.y = 0.66;
+          col.rotation.y = Math.PI / 8;
+          col.castShadow = true;
+          col.receiveShadow = true;
+          grp.add(col);
+          const band = new THREE.Mesh(solidBandGeo, solidBandMat);
+          band.position.y = 0.34;
+          band.rotation.y = Math.PI / 8;
+          grp.add(band);
+          const cap = new THREE.Mesh(solidCapGeo, solidCapMat);
+          cap.position.y = 1.38;
+          cap.rotation.y = Math.PI / 8;
           grp.add(cap);
           grp.position.set(cx, 0, cz);
           this.mapGroup.add(grp);
         } else if (tile === TileType.BUSH) {
           const grp = new THREE.Group();
-          for (let i = 0; i < 3; i++) {
-            const tuft = new THREE.Mesh(bushGeo, i === 0 ? bushTipMat : bushMat);
-            const ang = (i / 3) * Math.PI * 2 + (tx + ty) * 0.5;
-            tuft.position.set(Math.cos(ang) * 0.18, 0.44, Math.sin(ang) * 0.18);
-            tuft.scale.setScalar(i === 0 ? 0.95 : 0.78);
-            grp.add(tuft);
+          for (let i = 0; i < 5; i++) {
+            const ang = (i / 5) * Math.PI * 2 + (tx * 3 + ty) * 0.4;
+            const leaf = new THREE.Mesh(leafGeo, i % 2 === 0 ? bushLightMat : bushDarkMat);
+            leaf.position.set(Math.cos(ang) * 0.14, 0.04, Math.sin(ang) * 0.14);
+            leaf.rotation.y = -ang;
+            leaf.rotation.x = 0.34;
+            leaf.scale.setScalar(i === 0 ? 1.02 : 0.86);
+            grp.add(leaf);
+          }
+          if ((tx + ty) % 3 === 0) {
+            const bud = new THREE.Mesh(berryGeo, berryMat);
+            bud.position.set(0.12, 0.62, -0.08);
+            grp.add(bud);
           }
           grp.position.set(cx, 0, cz);
           this.mapGroup.add(grp);
@@ -268,29 +312,53 @@ export class ArenaRenderer {
           this.mapGroup.add(w);
           this.waterMeshes.push(w);
         } else if (tile === TileType.GEM_MINE) {
-          const crater = new THREE.Mesh(
-            new THREE.CylinderGeometry(0.68, 0.85, 0.55, 10),
+          const well = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.72, 0.92, 0.56, 8),
             new THREE.MeshToonMaterial({ color: '#3b2454' }),
           );
-          crater.position.set(cx, 0.27, cz);
-          crater.castShadow = true;
-          this.mapGroup.add(crater);
+          well.position.set(cx, 0.28, cz);
+          well.castShadow = true;
+          this.mapGroup.add(well);
 
-          const glow = new THREE.Mesh(
-            new THREE.CircleGeometry(0.55, 16),
+          const rimRing = new THREE.Mesh(
+            new THREE.TorusGeometry(0.66, 0.1, 8, 8),
+            new THREE.MeshToonMaterial({ color: '#695285' }),
+          );
+          rimRing.rotation.x = Math.PI / 2;
+          rimRing.position.set(cx, 0.56, cz);
+          this.mapGroup.add(rimRing);
+
+          const vortex = new THREE.Mesh(
+            new THREE.CircleGeometry(0.56, 16),
             new THREE.MeshBasicMaterial({ color: 0xc039ff }),
           );
-          glow.rotation.x = -Math.PI / 2;
-          glow.position.set(cx, 0.56, cz);
-          this.mapGroup.add(glow);
+          vortex.rotation.x = -Math.PI / 2;
+          vortex.position.set(cx, 0.57, cz);
+          this.mapGroup.add(vortex);
 
-          const crystal = new THREE.Mesh(
-            new THREE.OctahedronGeometry(0.42, 0),
+          // Pulsing faceted purple crystal cluster
+          const cluster = new THREE.Group();
+          const mainCrystal = new THREE.Mesh(
+            getGemCrystalGeo(),
             new THREE.MeshToonMaterial({ color: 0xe66bff, emissive: 0x7200c4 }),
           );
-          crystal.position.set(cx, 1.15, cz);
-          this.mapGroup.add(crystal);
-          this.mineCrystal = crystal;
+          mainCrystal.scale.setScalar(1.35);
+          cluster.add(mainCrystal);
+          for (let i = 0; i < 3; i++) {
+            const ang = (i / 3) * Math.PI * 2;
+            const shard = new THREE.Mesh(
+              getGemCrystalGeo(),
+              new THREE.MeshToonMaterial({ color: 0xc946ff, emissive: 0x520096 }),
+            );
+            shard.scale.setScalar(0.68);
+            shard.position.set(Math.cos(ang) * 0.28, -0.12, Math.sin(ang) * 0.28);
+            shard.rotation.z = -Math.cos(ang) * 0.35;
+            shard.rotation.x = Math.sin(ang) * 0.35;
+            cluster.add(shard);
+          }
+          cluster.position.set(cx, 1.2, cz);
+          this.mapGroup.add(cluster);
+          this.mineCrystal = cluster;
         }
       }
     }
@@ -318,14 +386,19 @@ export class ArenaRenderer {
         }
         this.triggerShake(0.22, 0.22);
       } else if (ev.type === 'hit') {
-        this.vfx.spawnHitBurst(ev.x, ev.y, 0xffe066, 5);
+        this.vfx.spawnHitBurst(ev.x, ev.y, 0xffe066, 6);
       } else if (ev.type === 'heal') {
-        this.vfx.spawnHitBurst(ev.x, ev.y, 0x5effb1, 5);
+        this.vfx.spawnHealBurst(ev.x, ev.y);
       } else if (ev.type === 'kill') {
-        this.vfx.spawnHitBurst(ev.x, ev.y, 0xff5266, 14);
+        this.vfx.spawnExplosion(ev.x, ev.y, 0xff5266, 1.15);
         this.triggerShake(0.26, 0.26);
-      } else if (ev.type === 'attack' && ev.isSuper) {
-        this.triggerShake(0.18, 0.16);
+      } else if (ev.type === 'attack') {
+        if (ev.brawlerId === 'buck' || ev.brawlerId === 'blaze' || ev.brawlerId === 'vex') {
+          this.vfx.spawnMuzzleFlash(ev.x, ev.y, ev.angle, ev.isSuper);
+        }
+        if (ev.isSuper) {
+          this.triggerShake(0.18, 0.16);
+        }
       }
     }
   }
@@ -399,7 +472,7 @@ export class ArenaRenderer {
       entry.visual.setOpacity(inBush && b.team === viewerTeam ? 0.56 : 1.0);
     }
 
-    // Animate bushes, water, and center gem mine crystal
+    // Animate bushes, water, and center gem mine crystal cluster
     for (let i = 0; i < this.bushMeshes.length; i++) {
       this.bushMeshes[i].rotation.z = Math.sin(this.clock * 2.2 + i * 0.7) * 0.05;
     }
@@ -408,7 +481,7 @@ export class ArenaRenderer {
     }
     if (this.mineCrystal) {
       this.mineCrystal.rotation.y = this.clock * 1.8;
-      this.mineCrystal.position.y = 1.15 + Math.sin(this.clock * 3.5) * 0.14;
+      this.mineCrystal.position.y = 1.2 + Math.sin(this.clock * 3.5) * 0.14;
     }
 
     // Update VFX + aim telegraph
