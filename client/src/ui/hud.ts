@@ -18,6 +18,8 @@ export class MatchHud {
   private onSuperReady?: () => void;
   private isSfxMuted: () => boolean;
   private isBgmMuted: () => boolean;
+  private blueIconEl!: HTMLElement;
+  private redIconEl!: HTMLElement;
   private blueScoreEl!: HTMLElement;
   private redScoreEl!: HTMLElement;
   private timerEl!: HTMLElement;
@@ -40,9 +42,9 @@ export class MatchHud {
     this.isBgmMuted = callbacks.isBgmMuted;
     this.container.innerHTML = `
       <div class="hud-top">
-        <div class="gem-score blue">💎 <span id="hud-blue-gems">0</span></div>
+        <div class="gem-score blue"><span id="hud-blue-icon">💎</span> <span id="hud-blue-gems">0</span></div>
         <div class="hud-timer" id="hud-timer">03:30</div>
-        <div class="gem-score red"><span id="hud-red-gems">0</span> 💎</div>
+        <div class="gem-score red"><span id="hud-red-gems">0</span> <span id="hud-red-icon">💎</span></div>
       </div>
       <div class="hud-corner-tools">
         <button id="hud-bgm-btn" class="btn btn-dark btn-sm">🎵 BGM</button>
@@ -65,6 +67,8 @@ export class MatchHud {
       <div id="hud-hint" class="controls-hint">WASD Move • Mouse Aim &amp; Click Shoot • Space/Right-Click Super • Q Auto-Aim</div>
     `;
 
+    this.blueIconEl = this.container.querySelector('#hud-blue-icon')!;
+    this.redIconEl = this.container.querySelector('#hud-red-icon')!;
     this.blueScoreEl = this.container.querySelector('#hud-blue-gems')!;
     this.redScoreEl = this.container.querySelector('#hud-red-gems')!;
     this.timerEl = this.container.querySelector('#hud-timer')!;
@@ -118,11 +122,21 @@ export class MatchHud {
     localSlot: number,
     project: (wx: number, wy: number, heightY: number) => { x: number; y: number; visible: boolean },
   ): void {
+    const isBall = state.mode === 'brawl-ball';
+    const scoreIcon = isBall ? '⚽' : '💎';
+    if (this.blueIconEl.textContent !== scoreIcon) {
+      this.blueIconEl.textContent = scoreIcon;
+      this.redIconEl.textContent = scoreIcon;
+      this.hintEl.textContent = isBall
+        ? 'WASD Move • Walk into Ball to Dribble • Click Shoot/Kick • Space/RMB Super-Kick (Breaks Walls)'
+        : 'WASD Move • Mouse Aim & Click Shoot • Space/Right-Click Super • Q Auto-Aim';
+    }
+
     this.blueScoreEl.textContent = String(state.blueGems);
     this.redScoreEl.textContent = String(state.redGems);
 
     if (state.phase === 'sudden_death') {
-      this.timerEl.textContent = `SD ${Math.ceil(state.suddenDeathRemaining)}s`;
+      this.timerEl.textContent = `${isBall ? 'OT' : 'SD'} ${Math.ceil(state.suddenDeathRemaining)}s`;
     } else {
       const rem = Math.max(0, Math.ceil(state.maxDuration - state.elapsed));
       const mm = Math.floor(rem / 60);
@@ -130,8 +144,17 @@ export class MatchHud {
       this.timerEl.textContent = `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
     }
 
-    if (state.countdownTeam) {
-      this.countdownEl.classList.remove('hidden', 'blue', 'red');
+    if (isBall && state.goalResetTimer > 0 && state.lastGoalTeam) {
+      this.countdownEl.classList.remove('hidden', 'blue', 'red', 'gold');
+      this.countdownEl.classList.add(state.lastGoalTeam);
+      const label = state.lastGoalTeam === 'blue' ? 'BLUE' : 'RED';
+      this.countdownEl.textContent = `⚽ ${label} SCORED!`;
+    } else if (isBall && state.phase === 'sudden_death') {
+      this.countdownEl.classList.remove('hidden', 'blue', 'red', 'gold');
+      this.countdownEl.classList.add('gold');
+      this.countdownEl.textContent = `⚡ OVERTIME — NEXT GOAL WINS!`;
+    } else if (state.countdownTeam) {
+      this.countdownEl.classList.remove('hidden', 'blue', 'red', 'gold');
       this.countdownEl.classList.add(state.countdownTeam);
       const label = state.countdownTeam === 'blue' ? 'BLUE' : 'RED';
       this.countdownEl.textContent = `${label} COUNTDOWN — ${Math.ceil(state.countdownTimer)}s`;
@@ -193,7 +216,12 @@ export class MatchHud {
 
       const hpPct = Math.max(0, Math.min(100, (b.hp / b.maxHp) * 100));
       const hpColor = b.slotIndex === localSlot ? '#32e276' : b.team === viewerTeam ? '#38b6ff' : '#ff4757';
-      const gemHtml = b.gems > 0 ? `<div class="overhead-gems">💎 ${b.gems}</div>` : '';
+      const hasBall = isBall && state.ball?.holderSlot === b.slotIndex;
+      const gemHtml = hasBall
+        ? `<div class="overhead-gems">⚽ BALL</div>`
+        : b.gems > 0
+          ? `<div class="overhead-gems">💎 ${b.gems}</div>`
+          : '';
       let ammoHtml = '';
       if (b.slotIndex === localSlot) {
         const segs = [0, 1, 2]

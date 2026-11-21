@@ -532,6 +532,17 @@ body,
   color: #fff;
 }
 
+.countdown-banner.gold {
+  background: linear-gradient(135deg, #ffd43b, #ff922b);
+  color: #0b1326;
+}
+
+.mode-chip.active {
+  background: linear-gradient(135deg, #2ecc71, #19a957);
+  border-color: #ffd43b;
+  color: #0b1326;
+}
+
 .controls-hint {
   position: fixed;
   bottom: 10px;

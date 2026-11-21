@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import {
+  BRAWL_BALL_GOAL_MAX_X,
+  BRAWL_BALL_GOAL_MIN_X,
   BrawlerId,
+  GameMode,
   isBrawlerVisibleToTeam,
   isPointInBush,
   MAP_HEIGHT,
@@ -152,6 +155,9 @@ export class ArenaRenderer {
   private bushMeshes: THREE.Object3D[] = [];
   private waterMeshes: THREE.Mesh[] = [];
   private mineCrystal: THREE.Group | null = null;
+  private ballRoot: THREE.Group | null = null;
+  private ballSpinGroup: THREE.Group | null = null;
+  private ballSuperHalo: THREE.Mesh | null = null;
   private brawlers: Map<number, { brawlerId: BrawlerId; team: Team; isLocal: boolean; visual: BrawlerVisual }> =
     new Map();
   private vfx: VfxManager;
@@ -295,7 +301,144 @@ export class ArenaRenderer {
     this.renderer.render(this.scene, this.camera);
   }
 
-  public loadMap(mapId: MapId, grid: Uint8Array): void {
+  private buildBrawlBallPitchVisuals(): void {
+    // Crisp painted white soccer pitch lines (halfway line, center circle, penalty boxes)
+    const lineMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+    });
+    const halfLine = new THREE.Mesh(new THREE.PlaneGeometry(MAP_WIDTH - 2.2, 0.16), lineMat);
+    halfLine.rotation.x = -Math.PI / 2;
+    halfLine.position.set(MAP_WIDTH / 2, 0.02, MAP_HEIGHT / 2);
+    this.mapGroup.add(halfLine);
+
+    const centerCircle = new THREE.Mesh(new THREE.RingGeometry(2.35, 2.52, 36), lineMat);
+    centerCircle.rotation.x = -Math.PI / 2;
+    centerCircle.position.set(MAP_WIDTH / 2, 0.02, MAP_HEIGHT / 2);
+    this.mapGroup.add(centerCircle);
+
+    const kickoffSpot = new THREE.Mesh(new THREE.CircleGeometry(0.32, 16), lineMat);
+    kickoffSpot.rotation.x = -Math.PI / 2;
+    kickoffSpot.position.set(MAP_WIDTH / 2, 0.022, MAP_HEIGHT / 2);
+    this.mapGroup.add(kickoffSpot);
+
+    // Build North (Red) & South (Blue) 3D Stadium Goalposts, Crossbars & Nets!
+    const goalWidth = BRAWL_BALL_GOAL_MAX_X - BRAWL_BALL_GOAL_MIN_X;
+    const goalCenterX = (BRAWL_BALL_GOAL_MIN_X + BRAWL_BALL_GOAL_MAX_X) / 2;
+    const postGeo = new THREE.CylinderGeometry(0.14, 0.16, 1.85, 12);
+    const crossbarGeo = new THREE.CylinderGeometry(0.13, 0.13, goalWidth + 0.25, 12);
+    crossbarGeo.rotateZ(Math.PI / 2);
+
+    const buildGoal = (zLine: number, netDir: number, teamColor: number) => {
+      const grp = new THREE.Group();
+      const postMat = new THREE.MeshToonMaterial({ color: teamColor });
+      const glowLine = new THREE.Mesh(
+        new THREE.PlaneGeometry(goalWidth, 0.24),
+        new THREE.MeshBasicMaterial({ color: teamColor, transparent: true, opacity: 0.85, depthWrite: false }),
+      );
+      glowLine.rotation.x = -Math.PI / 2;
+      glowLine.position.set(goalCenterX, 0.025, zLine);
+      grp.add(glowLine);
+
+      for (const px of [BRAWL_BALL_GOAL_MIN_X, BRAWL_BALL_GOAL_MAX_X]) {
+        const post = new THREE.Mesh(postGeo, postMat);
+        post.position.set(px, 0.92, zLine);
+        grp.add(post);
+      }
+      const bar = new THREE.Mesh(crossbarGeo, postMat);
+      bar.position.set(goalCenterX, 1.82, zLine);
+      grp.add(bar);
+
+      // Semi-transparent stadium goal net (back wall + roof + side walls)
+      const netMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.28,
+        side: THREE.DoubleSide,
+        wireframe: true,
+      });
+      const depth = 1.35;
+      const backNet = new THREE.Mesh(new THREE.PlaneGeometry(goalWidth, 1.8, 12, 5), netMat);
+      backNet.position.set(goalCenterX, 0.9, zLine + netDir * depth);
+      grp.add(backNet);
+
+      const roofNet = new THREE.Mesh(new THREE.PlaneGeometry(goalWidth, depth, 12, 3), netMat);
+      roofNet.rotation.x = Math.PI / 2;
+      roofNet.position.set(goalCenterX, 1.8, zLine + netDir * (depth / 2));
+      grp.add(roofNet);
+
+      for (const px of [BRAWL_BALL_GOAL_MIN_X, BRAWL_BALL_GOAL_MAX_X]) {
+        const sideNet = new THREE.Mesh(new THREE.PlaneGeometry(depth, 1.8, 3, 5), netMat);
+        sideNet.rotation.y = Math.PI / 2;
+        sideNet.position.set(px, 0.9, zLine + netDir * (depth / 2));
+        grp.add(sideNet);
+      }
+
+      // Goal box floor tint
+      const boxFloor = new THREE.Mesh(
+        new THREE.PlaneGeometry(goalWidth, 2.6),
+        new THREE.MeshBasicMaterial({ color: teamColor, transparent: true, opacity: 0.14, depthWrite: false }),
+      );
+      boxFloor.rotation.x = -Math.PI / 2;
+      boxFloor.position.set(goalCenterX, 0.018, zLine - netDir * 1.3);
+      grp.add(boxFloor);
+
+      this.mapGroup.add(grp);
+    };
+
+    buildGoal(1.0, -1, 0xff4757); // North = Red Goal (Blue attacks this!)
+    buildGoal(MAP_HEIGHT - 1.0, 1, 0x29a8ff); // South = Blue Goal (Red attacks this!)
+
+    // Create rolling 3D Brawl Ball entity (Blender GLB with procedural fallback)
+    const root = new THREE.Group();
+    const shadow = new THREE.Mesh(
+      new THREE.CircleGeometry(0.46, 18),
+      new THREE.MeshBasicMaterial({ color: 0x0a1020, transparent: true, opacity: 0.38, depthWrite: false }),
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = 0.03;
+    root.add(shadow);
+
+    const halo = new THREE.Mesh(
+      new THREE.RingGeometry(0.46, 0.68, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0xffd43b,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+      }),
+    );
+    halo.rotation.x = -Math.PI / 2;
+    halo.position.y = 0.05;
+    halo.visible = false;
+    root.add(halo);
+
+    const spinGroup = new THREE.Group();
+    spinGroup.position.y = 0.4;
+    const glbBall = cloneModel('brawl_ball');
+    if (glbBall) {
+      spinGroup.add(glbBall);
+    } else {
+      spinGroup.add(
+        new THREE.Mesh(
+          new THREE.IcosahedronGeometry(0.38, 1),
+          new THREE.MeshToonMaterial({ color: 0xffffff }),
+        ),
+      );
+    }
+    root.add(spinGroup);
+    root.position.set(MAP_WIDTH / 2, 0, MAP_HEIGHT / 2);
+    this.mapGroup.add(root);
+
+    this.ballRoot = root;
+    this.ballSpinGroup = spinGroup;
+    this.ballSuperHalo = halo;
+  }
+
+  public loadMap(mapId: MapId, grid: Uint8Array, mode: GameMode = 'gem-grab'): void {
     this.mode = 'match';
     this.clearResultsStage();
     this.scene.background = new THREE.Color(
@@ -313,6 +456,9 @@ export class ArenaRenderer {
     this.bushMeshes = [];
     this.waterMeshes = [];
     this.mineCrystal = null;
+    this.ballRoot = null;
+    this.ballSpinGroup = null;
+    this.ballSuperHalo = null;
     this.matchSurround = null;
 
     for (const entry of this.brawlers.values()) {
@@ -580,6 +726,10 @@ export class ArenaRenderer {
       const bushBatch = createInstancedGlbBatch(bushKey, bushMatrices, false);
       if (bushBatch) this.mapGroup.add(bushBatch);
     }
+
+    if (mode === 'brawl-ball') {
+      this.buildBrawlBallPitchVisuals();
+    }
   }
 
   public removeWall(tx: number, ty: number, spawnVfx = true): void {
@@ -610,6 +760,13 @@ export class ArenaRenderer {
       } else if (ev.type === 'kill') {
         this.vfx.spawnExplosion(ev.x, ev.y, 0xff5266, 1.15);
         this.triggerShake(0.26, 0.26);
+      } else if (ev.type === 'ball_kick') {
+        this.vfx.spawnHitBurst(ev.x, ev.y, ev.isSuper ? 0xffd43b : 0x56ecff, ev.isSuper ? 10 : 5);
+        if (ev.isSuper) this.triggerShake(0.20, 0.18);
+      } else if (ev.type === 'goal') {
+        const goalZ = ev.team === 'blue' ? 1.2 : MAP_HEIGHT - 1.2;
+        this.vfx.spawnExplosion(MAP_WIDTH / 2, goalZ, ev.team === 'blue' ? 0x29a8ff : 0xff4757, 1.65);
+        this.triggerShake(0.35, 0.30);
       } else if (ev.type === 'attack') {
         if (ev.brawlerId === 'buck' || ev.brawlerId === 'blaze' || ev.brawlerId === 'vex') {
           this.vfx.spawnMuzzleFlash(ev.x, ev.y, ev.angle, ev.isSuper);
@@ -707,6 +864,28 @@ export class ArenaRenderer {
     if (this.mineCrystal) {
       this.mineCrystal.rotation.y = this.clock * 1.8;
       this.mineCrystal.position.y = 1.2 + Math.sin(this.clock * 3.5) * 0.14;
+    }
+
+    // Sync rolling 3D Brawl Ball position, realistic roll spin, and Super-Kick halo!
+    if (this.ballRoot && state.ball) {
+      this.ballRoot.visible = true;
+      this.ballRoot.position.set(state.ball.x, 0, state.ball.y);
+      if (this.ballSpinGroup) {
+        this.ballSpinGroup.rotation.z -= state.ball.vx * dt * 2.2;
+        this.ballSpinGroup.rotation.x += state.ball.vy * dt * 2.2;
+        const bounce = state.ball.holderSlot !== null ? Math.abs(Math.sin(this.clock * 9)) * 0.08 : 0;
+        this.ballSpinGroup.position.y = 0.4 + bounce;
+      }
+      if (this.ballSuperHalo) {
+        const showHalo = state.ball.isSuperKick || state.ball.holderSlot !== null;
+        this.ballSuperHalo.visible = showHalo;
+        (this.ballSuperHalo.material as THREE.MeshBasicMaterial).color.setHex(
+          state.ball.isSuperKick ? 0xffd43b : 0x56ecff,
+        );
+        this.ballSuperHalo.rotation.z = this.clock * 3.5;
+      }
+    } else if (this.ballRoot) {
+      this.ballRoot.visible = false;
     }
 
     // Update VFX + aim telegraph

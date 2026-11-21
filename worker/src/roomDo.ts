@@ -5,6 +5,7 @@ import {
   BRAWLERS,
   ClientMessage,
   dequantizeInput,
+  GameMode,
   LobbySlot,
   LobbyState,
   MapId,
@@ -35,6 +36,7 @@ export interface HibernatedSocketMeta {
   brawlerId: BrawlerId;
   isHost: boolean;
   mapId?: MapId;
+  mode?: GameMode;
 }
 
 interface InternalSlot {
@@ -59,6 +61,7 @@ function sanitizeName(raw: string, fallback: string): string {
 export class RoomManager {
   public readonly code: string;
   private mapId: MapId = 'crystal-cavern';
+  private mode: GameMode = 'gem-grab';
   private hostSlot = -1;
   private slots: InternalSlot[];
   private socketToSlot: Map<SocketLike, number> = new Map();
@@ -127,6 +130,7 @@ export class RoomManager {
     return {
       code: this.code,
       mapId: this.mapId,
+      mode: this.mode,
       hostSlot: this.hostSlot,
       hostToken: host?.token ?? undefined,
       inMatch: this.isMatchRunning(),
@@ -167,6 +171,7 @@ export class RoomManager {
           brawlerId: s.brawlerId,
           isHost: s.slotIndex === this.hostSlot,
           mapId: this.mapId,
+          mode: this.mode,
         };
         try {
           s.socket.serializeAttachment(meta);
@@ -194,6 +199,9 @@ export class RoomManager {
 
     if (meta.mapId && MAPS[meta.mapId]) {
       this.mapId = meta.mapId;
+    }
+    if (meta.mode === 'gem-grab' || meta.mode === 'brawl-ball') {
+      this.mode = meta.mode;
     }
     if (meta.isHost || this.hostSlot === -1) {
       this.hostSlot = idx;
@@ -265,6 +273,7 @@ export class RoomManager {
         this.sendTo(ws, {
           type: 'match_start',
           mapId: this.mapId,
+          mode: this.mode,
           slotIndex: existing.slotIndex,
           team: existing.team,
           snapshot: snap,
@@ -458,6 +467,11 @@ export class RoomManager {
         this.mapId = msg.mapId;
         this.broadcast({ type: 'lobby', lobby: this.getLobby() });
       }
+    } else if (msg.type === 'pick_mode') {
+      if (slotIdx === this.hostSlot && (msg.mode === 'gem-grab' || msg.mode === 'brawl-ball')) {
+        this.mode = msg.mode;
+        this.broadcast({ type: 'lobby', lobby: this.getLobby() });
+      }
     } else if (msg.type === 'switch_team') {
       this.switchSlotTeam(slotIdx, msg.team);
     } else if (msg.type === 'start_match') {
@@ -538,6 +552,7 @@ export class RoomManager {
 
     this.engine = new MatchEngine({
       mapId: this.mapId,
+      mode: this.mode,
       slots: setup,
       seed: Date.now() & 0xfffffff,
     });
@@ -553,6 +568,7 @@ export class RoomManager {
         this.sendTo(s.socket, {
           type: 'match_start',
           mapId: this.mapId,
+          mode: this.mode,
           slotIndex: s.slotIndex,
           team: s.team,
           snapshot: initialSnap,

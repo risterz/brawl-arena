@@ -304,6 +304,13 @@ export class SfxEngine {
       this.playSfx('heal', 0.04, 140);
     } else if (event.type === 'gem_pickup') {
       this.playSfx('gem', 0.05, 50);
+    } else if (event.type === 'ball_kick') {
+      if (event.isSuper) {
+        this.playSfx('super_cast', 0.05, 60);
+      }
+      this.playSfx('golem', 0.08, 60);
+    } else if (event.type === 'goal') {
+      this.playSfx('match_end', 0, 250);
     } else if (event.type === 'wall_break') {
       this.playSfx('wall_break', 0.06, 70);
     } else if (event.type === 'kill') {

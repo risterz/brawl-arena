@@ -3,6 +3,7 @@ import {
   BRAWLERS,
   ClientMessage,
   createGridCopy,
+  GameMode,
   LobbyState,
   MAP_HEIGHT,
   MAP_WIDTH,
@@ -11,6 +12,7 @@ import {
   MatchSnapshot,
   MatchState,
   PlayerInput,
+  prepareBrawlBallGrid,
   quantizeInput,
   resolveCircleGridCollision,
   ServerMessage,
@@ -191,6 +193,10 @@ export class OnlineMatchController {
     this.send({ type: 'pick_map', mapId });
   }
 
+  public pickMode(mode: GameMode): void {
+    this.send({ type: 'pick_mode', mode });
+  }
+
   public startMatch(): void {
     this.send({ type: 'start_match' });
   }
@@ -201,6 +207,9 @@ export class OnlineMatchController {
 
   private buildStateFromSnapshot(snap: MatchSnapshot): MatchState {
     const grid = createGridCopy(snap.mapId);
+    if (snap.mode === 'brawl-ball') {
+      prepareBrawlBallGrid(grid);
+    }
     for (const w of snap.brokenWalls) {
       setTile(grid, w.tx, w.ty, TileType.EMPTY);
     }
@@ -212,24 +221,28 @@ export class OnlineMatchController {
     }
     return {
       mapId: snap.mapId,
+      mode: snap.mode ?? 'gem-grab',
       width: MAP_WIDTH,
       height: MAP_HEIGHT,
       grid,
       phase: snap.phase,
       elapsed: snap.elapsed,
-      maxDuration: 210,
+      maxDuration: snap.maxDuration ?? 210,
       suddenDeathRemaining: snap.suddenDeathRemaining,
       gemSpawnTimer: 0,
       gemsSpawnedTotal: 0,
       maxGemsTotal: 29,
       countdownTeam: snap.countdownTeam,
       countdownTimer: snap.countdownTimer,
+      goalResetTimer: snap.goalResetTimer ?? 0,
+      lastGoalTeam: snap.lastGoalTeam ?? null,
       winner: snap.winner,
       starPlayerSlot: snap.starPlayerSlot,
       brawlers: snap.brawlers.map((b) => ({ ...b, stats: { ...b.stats } })),
       projectiles: snap.projectiles.map((p) => ({ ...p })),
       hazards: snap.hazards.map((h) => ({ ...h })),
       gems: snap.gems.map((g) => ({ ...g })),
+      ball: snap.ball ? { ...snap.ball } : null,
       blueGems: snap.blueGems,
       redGems: snap.redGems,
       nextEntityId: 1,
@@ -252,12 +265,15 @@ export class OnlineMatchController {
     this.state.suddenDeathRemaining = snap.suddenDeathRemaining;
     this.state.countdownTeam = snap.countdownTeam;
     this.state.countdownTimer = snap.countdownTimer;
+    this.state.goalResetTimer = snap.goalResetTimer ?? 0;
+    this.state.lastGoalTeam = snap.lastGoalTeam ?? null;
     this.state.winner = snap.winner;
     this.state.starPlayerSlot = snap.starPlayerSlot;
     this.state.blueGems = snap.blueGems;
     this.state.redGems = snap.redGems;
     this.state.hazards = snap.hazards;
     this.state.gems = snap.gems;
+    this.state.ball = snap.ball ? { ...snap.ball } : null;
 
     // Reconcile local prediction gently against authoritative server
     const srvMe = snap.brawlers[this.mySlot];
@@ -325,6 +341,18 @@ export class OnlineMatchController {
           y: pa.y + (pb.y - pa.y) * t,
         };
       });
+
+      if (b.snapshot.ball) {
+        const ba = a.snapshot.ball;
+        const bb = b.snapshot.ball;
+        const jumpDist = ba ? Math.hypot(bb.x - ba.x, bb.y - ba.y) : 99;
+        this.state.ball =
+          ba && jumpDist < 5.0
+            ? { ...bb, x: ba.x + (bb.x - ba.x) * t, y: ba.y + (bb.y - ba.y) * t }
+            : { ...bb };
+      } else {
+        this.state.ball = null;
+      }
     } else if (this.snapBuffer.length === 1) {
       const only = this.snapBuffer[0].snapshot;
       this.state.brawlers = only.brawlers.map((b, idx) =>

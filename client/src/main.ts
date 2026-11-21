@@ -1,5 +1,5 @@
 import './styles.css';
-import { BrawlerId, MapId, MatchState } from '@brawl-arena/shared';
+import { BrawlerId, GameMode, MapId, MatchState } from '@brawl-arena/shared';
 import { SfxEngine } from './audio/sfx';
 import { ControlManager } from './input/controls';
 import { LocalMatchController } from './net/localController';
@@ -35,6 +35,7 @@ function boot(): void {
   let playerName = localStorage.getItem('brawl_arena_name') || `Brawler${Math.floor(10 + Math.random() * 89)}`;
   let selectedBrawler: BrawlerId = 'buck';
   let selectedMap: MapId = 'crystal-cavern';
+  let selectedMode: GameMode = 'gem-grab';
   let activeMatchMap: MapId = 'crystal-cavern';
   let localMatch: LocalMatchController | null = null;
   let resultsShown = false;
@@ -84,6 +85,10 @@ function boot(): void {
           sfx.playUiSelect();
           online.pickMap(mapId);
         },
+        onPickMode: (nextMode) => {
+          sfx.playUiSelect();
+          online.pickMode(nextMode);
+        },
         onStartMatch: () => {
           sfx.playUiClick();
           online.startMatch();
@@ -107,7 +112,7 @@ function boot(): void {
       activeMatchMap = mapId;
       resultsShown = false;
       screens.clear();
-      renderer.loadMap(mapId, state.grid);
+      renderer.loadMap(mapId, state.grid, state.mode);
       hud.show(controls.isTouchMode());
       controls.setActive(true);
       sfx.playBgm(mapId === 'crystal-cavern' ? 'battle' : mapId === 'iron-foundry' ? 'foundry' : 'battle_alt');
@@ -159,6 +164,7 @@ function boot(): void {
       playerName,
       selectedBrawler,
       selectedMap,
+      selectedMode,
       sfxMuted: sfx.isSfxMuted(),
       bgmMuted: sfx.isBgmMuted(),
       onToggleSfx: () => {
@@ -202,6 +208,12 @@ function boot(): void {
         selectedMap = mapId;
         showHome();
       },
+      onSelectMode: (nextMode) => {
+        sfx.unlock();
+        sfx.playUiSelect();
+        selectedMode = nextMode;
+        showHome();
+      },
       onPlaySolo: () => {
         sfx.unlock();
         sfx.playUiClick();
@@ -239,10 +251,11 @@ function boot(): void {
     screens.clear();
     localMatch = new LocalMatchController({
       mapId: selectedMap,
+      mode: selectedMode,
       playerBrawler: selectedBrawler,
       playerName,
     });
-    renderer.loadMap(selectedMap, localMatch.getState().grid);
+    renderer.loadMap(selectedMap, localMatch.getState().grid, selectedMode);
     hud.show(controls.isTouchMode());
     controls.setActive(true);
     sfx.playBgm(selectedMap === 'crystal-cavern' ? 'battle' : selectedMap === 'iron-foundry' ? 'foundry' : 'battle_alt');

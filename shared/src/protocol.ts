@@ -1,6 +1,8 @@
 import {
+  BallState,
   BrawlerId,
   BrawlerState,
+  GameMode,
   GemState,
   HazardZoneState,
   MapId,
@@ -26,6 +28,7 @@ export interface LobbySlot {
 export interface LobbyState {
   code: string;
   mapId: MapId;
+  mode: GameMode;
   hostSlot: number;
   hostToken?: string;
   inMatch: boolean;
@@ -83,11 +86,15 @@ export interface MatchSnapshot {
   tick: number;
   hostSlot?: number;
   mapId: MapId;
+  mode: GameMode;
   phase: MatchPhase;
   elapsed: number;
+  maxDuration: number;
   suddenDeathRemaining: number;
   countdownTeam: Team | null;
   countdownTimer: number;
+  goalResetTimer: number;
+  lastGoalTeam: Team | null;
   winner: Team | 'draw' | null;
   starPlayerSlot: number;
   blueGems: number;
@@ -97,6 +104,7 @@ export interface MatchSnapshot {
   projectiles: ProjectileState[];
   hazards: HazardZoneState[];
   gems: GemState[];
+  ball: BallState | null;
   events: MatchEvent[];
 }
 
@@ -109,11 +117,15 @@ export function serializeSnapshot(
   return {
     tick,
     mapId: state.mapId,
+    mode: state.mode,
     phase: state.phase,
     elapsed: Number(state.elapsed.toFixed(2)),
+    maxDuration: state.maxDuration,
     suddenDeathRemaining: Number(state.suddenDeathRemaining.toFixed(2)),
     countdownTeam: state.countdownTeam,
     countdownTimer: Number(state.countdownTimer.toFixed(2)),
+    goalResetTimer: Number(state.goalResetTimer.toFixed(2)),
+    lastGoalTeam: state.lastGoalTeam,
     winner: state.winner,
     starPlayerSlot: state.starPlayerSlot,
     blueGems: state.blueGems,
@@ -150,6 +162,16 @@ export function serializeSnapshot(
       y: Number(g.y.toFixed(2)),
       popTimer: Number(g.popTimer.toFixed(2)),
     })),
+    ball: state.ball
+      ? {
+          ...state.ball,
+          x: Number(state.ball.x.toFixed(3)),
+          y: Number(state.ball.y.toFixed(3)),
+          vx: Number(state.ball.vx.toFixed(2)),
+          vy: Number(state.ball.vy.toFixed(2)),
+          pickupCooldown: Number(state.ball.pickupCooldown.toFixed(2)),
+        }
+      : null,
     events,
   };
 }
@@ -159,6 +181,7 @@ export type ClientMessage =
   | { type: 'pick_brawler'; brawlerId: BrawlerId }
   | { type: 'switch_team'; team: Team }
   | { type: 'pick_map'; mapId: MapId }
+  | { type: 'pick_mode'; mode: GameMode }
   | { type: 'start_match' }
   | { type: 'return_lobby' }
   | { type: 'input'; input: CompactInput }
@@ -167,7 +190,7 @@ export type ClientMessage =
 export type ServerMessage =
   | { type: 'welcome'; slotIndex: number; team: Team; token: string; lobby: LobbyState }
   | { type: 'lobby'; lobby: LobbyState }
-  | { type: 'match_start'; mapId: MapId; slotIndex: number; team: Team; snapshot: MatchSnapshot }
+  | { type: 'match_start'; mapId: MapId; mode: GameMode; slotIndex: number; team: Team; snapshot: MatchSnapshot }
   | { type: 'snapshot'; snapshot: MatchSnapshot }
   | { type: 'error'; message: string }
   | { type: 'pong'; t: number };

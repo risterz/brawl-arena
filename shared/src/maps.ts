@@ -167,6 +167,33 @@ export const MAP_LIST: MapDefinition[] = [
   MAPS['iron-foundry'],
 ];
 
+export const BRAWL_BALL_GOAL_MIN_X = 7;
+export const BRAWL_BALL_GOAL_MAX_X = 14; // exclusive tile index (tiles 7..13 = 7 tiles wide!)
+
 export function createGridCopy(mapId: MapId): Uint8Array {
   return new Uint8Array(MAPS[mapId].grid);
+}
+
+/**
+ * Prepares any symmetric 21x33 map grid for Brawl Ball:
+ * - Opens 7-tile goal mouths on North (y=0, Red Goal) and South (y=32, Blue Goal)
+ * - Clears goal boxes (y=1..2 and y=30..31) and the 3x3 center kickoff circle
+ */
+export function prepareBrawlBallGrid(grid: Uint8Array): Uint8Array {
+  // Open goal mouths & goal boxes
+  for (let x = BRAWL_BALL_GOAL_MIN_X; x < BRAWL_BALL_GOAL_MAX_X; x++) {
+    grid[0 * MAP_WIDTH + x] = TileType.EMPTY;
+    grid[1 * MAP_WIDTH + x] = TileType.EMPTY;
+    grid[2 * MAP_WIDTH + x] = TileType.EMPTY;
+    grid[(MAP_HEIGHT - 1) * MAP_WIDTH + x] = TileType.EMPTY;
+    grid[(MAP_HEIGHT - 2) * MAP_WIDTH + x] = TileType.EMPTY;
+    grid[(MAP_HEIGHT - 3) * MAP_WIDTH + x] = TileType.EMPTY;
+  }
+  // Clear center kickoff circle (remove GEM_MINE and immediate walls/water)
+  for (let y = 15; y <= 17; y++) {
+    for (let x = 9; x <= 11; x++) {
+      grid[y * MAP_WIDTH + x] = TileType.EMPTY;
+    }
+  }
+  return grid;
 }

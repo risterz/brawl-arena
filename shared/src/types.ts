@@ -4,6 +4,8 @@ export type BrawlerId = 'buck' | 'vex' | 'blaze' | 'golem' | 'mort' | 'lumi';
 
 export type MapId = 'crystal-cavern' | 'twin-bridges' | 'iron-foundry';
 
+export type GameMode = 'gem-grab' | 'brawl-ball';
+
 export enum TileType {
   EMPTY = 0,
   WALL_BREAKABLE = 1,
@@ -201,6 +203,19 @@ export interface GemState {
   popDuration: number;
 }
 
+export interface BallState {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  holderSlot: number | null;
+  lastTouchTeam: Team | null;
+  lastTouchSlot: number | null;
+  isSuperKick: boolean;
+  pickupCooldown: number;
+  kickCooldownSlot: number | null;
+}
+
 export type MatchPhase = 'playing' | 'sudden_death' | 'ended';
 
 export type MatchEvent =
@@ -211,6 +226,8 @@ export type MatchEvent =
   | { type: 'wall_break'; tiles: Array<{ tx: number; ty: number }> }
   | { type: 'gem_spawn'; x: number; y: number }
   | { type: 'gem_pickup'; slotIndex: number; x: number; y: number }
+  | { type: 'ball_kick'; slotIndex: number; isSuper: boolean; x: number; y: number }
+  | { type: 'goal'; team: Team; scorerSlot: number; blueScore: number; redScore: number }
   | { type: 'countdown_start'; team: Team }
   | { type: 'countdown_cancel' }
   | { type: 'match_end'; winner: Team | 'draw'; starPlayerSlot: number };
@@ -234,12 +251,14 @@ export interface SlotSetup {
 
 export interface MatchConfig {
   mapId: MapId;
+  mode?: GameMode;
   slots: SlotSetup[];
   seed?: number;
 }
 
 export interface MatchState {
   mapId: MapId;
+  mode: GameMode;
   width: number;
   height: number;
   grid: Uint8Array;
@@ -252,12 +271,15 @@ export interface MatchState {
   maxGemsTotal: number;
   countdownTeam: Team | null;
   countdownTimer: number;
+  goalResetTimer: number;
+  lastGoalTeam: Team | null;
   winner: Team | 'draw' | null;
   starPlayerSlot: number;
   brawlers: BrawlerState[];
   projectiles: ProjectileState[];
   hazards: HazardZoneState[];
   gems: GemState[];
+  ball: BallState | null;
   blueGems: number;
   redGems: number;
   nextEntityId: number;

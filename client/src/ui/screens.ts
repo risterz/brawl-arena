@@ -2,6 +2,7 @@ import {
   BRAWLER_LIST,
   BrawlerId,
   BRAWLERS,
+  GameMode,
   LobbyState,
   MAP_LIST,
   MapId,
@@ -14,6 +15,7 @@ export interface HomeViewProps {
   playerName: string;
   selectedBrawler: BrawlerId;
   selectedMap: MapId;
+  selectedMode: GameMode;
   sfxMuted: boolean;
   bgmMuted: boolean;
   onToggleSfx: () => boolean;
@@ -21,6 +23,7 @@ export interface HomeViewProps {
   onNameChange: (name: string) => void;
   onOpenBrawlers: () => void;
   onSelectMap: (mapId: MapId) => void;
+  onSelectMode: (mode: GameMode) => void;
   onPlaySolo: () => void;
   onCreateRoom: () => void;
   onJoinRoom: (code: string) => void;
@@ -32,6 +35,7 @@ export interface LobbyViewProps {
   onPickBrawler: (id: BrawlerId) => void;
   onSwitchTeam: (team: Team) => void;
   onPickMap: (mapId: MapId) => void;
+  onPickMode: (mode: GameMode) => void;
   onStartMatch: () => void;
   onLeave: () => void;
   onCopyInvite: (code: string) => void;
@@ -85,13 +89,24 @@ export class ScreenManager {
       (m) =>
         `<button class="map-chip ${m.id === props.selectedMap ? 'active' : ''}" data-map="${m.id}">${escapeHtml(m.name)}</button>`,
     ).join('');
+    const modeChips = (
+      [
+        { id: 'gem-grab', label: '💎 Gem Grab' },
+        { id: 'brawl-ball', label: '⚽ Brawl Ball' },
+      ] as const
+    )
+      .map(
+        (m) =>
+          `<button class="map-chip mode-chip ${m.id === props.selectedMode ? 'active' : ''}" data-mode="${m.id}">${m.label}</button>`,
+      )
+      .join('');
 
     this.container.innerHTML = `
       <div class="home-shell">
         <div class="home-top">
           <div class="brand-badge">
             <h1>BRAWL ARENA</h1>
-            <span>3v3 Gem Grab • 3D Arena</span>
+            <span>3v3 Gem Grab &amp; Brawl Ball • 3D Arena</span>
           </div>
           <div class="action-row">
             <button id="home-bgm-btn" class="btn btn-dark btn-sm">${props.bgmMuted ? '🔇 BGM' : '🎵 BGM'}</button>
@@ -121,6 +136,7 @@ export class ScreenManager {
           </div>
 
           <div class="action-deck">
+            <div class="map-chip-row">${modeChips}</div>
             <div class="map-chip-row">${mapChips}</div>
             <div class="action-row">
               <button id="play-solo-btn" class="btn btn-gold">PLAY SOLO vs BOTS</button>
@@ -168,10 +184,16 @@ export class ScreenManager {
       if (e.key === 'Enter') submitJoin();
     });
 
-    this.container.querySelectorAll('.map-chip').forEach((btn) => {
+    this.container.querySelectorAll('[data-map]').forEach((btn) => {
       btn.addEventListener('click', () => {
         const id = (btn as HTMLElement).dataset.map as MapId;
         props.onSelectMap(id);
+      });
+    });
+    this.container.querySelectorAll('[data-mode]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = (btn as HTMLElement).dataset.mode as GameMode;
+        props.onSelectMode(id);
       });
     });
   }
@@ -278,6 +300,18 @@ export class ScreenManager {
         `<button class="map-chip ${m.id === lobby.mapId ? 'active' : ''}" data-map="${m.id}" ${isHost ? '' : 'disabled'}>${escapeHtml(m.name)}</button>`,
     ).join('');
 
+    const modePills = (
+      [
+        { id: 'gem-grab', label: '💎 Gem Grab' },
+        { id: 'brawl-ball', label: '⚽ Brawl Ball' },
+      ] as const
+    )
+      .map(
+        (m) =>
+          `<button class="map-chip mode-chip ${m.id === (lobby.mode ?? 'gem-grab') ? 'active' : ''}" data-mode="${m.id}" ${isHost ? '' : 'disabled'}>${m.label}</button>`,
+      )
+      .join('');
+
     this.container.innerHTML = `
       <div class="modal-backdrop">
         <div class="modal-card">
@@ -294,6 +328,10 @@ export class ScreenManager {
             <div>
               <div style="font-size:12px;color:#9ec5ff;font-weight:800;margin-bottom:4px;">YOUR BRAWLER</div>
               <div class="map-chip-row">${brawlerPills}</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:#9ec5ff;font-weight:800;margin-bottom:4px;">MODE ${isHost ? '(HOST)' : ''}</div>
+              <div class="map-chip-row">${modePills}</div>
             </div>
             <div>
               <div style="font-size:12px;color:#9ec5ff;font-weight:800;margin-bottom:4px;">MAP ${isHost ? '(HOST)' : ''}</div>
@@ -332,12 +370,18 @@ export class ScreenManager {
       this.container.querySelectorAll('[data-map]').forEach((btn) => {
         btn.addEventListener('click', () => props.onPickMap((btn as HTMLElement).dataset.map as MapId));
       });
+      this.container.querySelectorAll('[data-mode]').forEach((btn) => {
+        btn.addEventListener('click', () => props.onPickMode((btn as HTMLElement).dataset.mode as GameMode));
+      });
     }
   }
 
   public renderResults(props: ResultsViewProps): void {
     this.container.classList.remove('hidden');
     const { state, localSlot } = props;
+    const isBall = state.mode === 'brawl-ball';
+    const objIcon = isBall ? '⚽' : '💎';
+    const objLabel = isBall ? 'Goals' : 'Gems';
     const lineup = computePodiumLineup(state, localSlot);
     const headline =
       lineup.outcome === 'draw' ? 'DRAW!' : lineup.outcome === 'victory' ? 'VICTORY!' : 'DEFEAT';
@@ -367,7 +411,7 @@ export class ScreenManager {
             <div class="podium-card-brawler">${escapeHtml(bCfg.name)}</div>
             <div class="podium-card-stats">
               <span>⚔️ ${b.stats.kills}/${b.stats.deaths}</span>
-              <span>💎 ${b.stats.gemsCollected}</span>
+              <span>${objIcon} ${b.stats.gemsCollected}</span>
               <span>💥 ${b.stats.damageDealt}</span>
             </div>
           </div>
@@ -384,7 +428,7 @@ export class ScreenManager {
             <td style="color:${teamColor};font-weight:900;">${escapeHtml(b.name)}${star}</td>
             <td>${escapeHtml(BRAWLERS[b.brawlerId].name)}</td>
             <td>${b.stats.kills} / ${b.stats.deaths}</td>
-            <td>💎 ${b.stats.gemsCollected}</td>
+            <td>${objIcon} ${b.stats.gemsCollected}</td>
             <td>${b.stats.damageDealt}</td>
           </tr>
         `;
@@ -430,7 +474,7 @@ export class ScreenManager {
                 <th>Player</th>
                 <th>Brawler</th>
                 <th>K / D</th>
-                <th>Gems</th>
+                <th>${objLabel}</th>
                 <th>Damage</th>
               </tr>
             </thead>

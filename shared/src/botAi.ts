@@ -240,7 +240,7 @@ export class BotController {
     for (const bot of state.brawlers) {
       if (!bot.isBot) continue;
 
-      if (!bot.alive || bot.leap) {
+      if (!bot.alive || bot.leap || state.goalResetTimer > 0) {
         result.set(bot.slotIndex, {
           moveX: 0,
           moveY: 0,
@@ -249,6 +249,11 @@ export class BotController {
           superFire: false,
           autoAim: false,
         });
+        continue;
+      }
+
+      if (state.mode === 'brawl-ball' && state.ball) {
+        result.set(bot.slotIndex, this.computeBrawlBallInput(state, bot, dt));
         continue;
       }
 
@@ -588,5 +593,185 @@ export class BotController {
     }
 
     return result;
+  }
+
+  private computeBrawlBallInput(state: MatchState, bot: BrawlerState, dt: number): PlayerInput {
+    const ball = state.ball!;
+    const mem = this.getMemory(bot.slotIndex, bot);
+    mem.pathTimer -= dt;
+    mem.strafeTimer -= dt;
+    if (mem.strafeTimer <= 0) {
+      mem.strafeSign *= -1;
+      mem.strafeTimer = 0.7;
+    }
+
+    const cfg = BRAWLERS[bot.brawlerId];
+    const hpRatio = bot.hp / bot.maxHp;
+    const enemyGoal: Vec2 = { x: 10.5, y: bot.team === 'blue' ? 0.6 : state.height - 0.6 };
+    const ownGoal: Vec2 = { x: 10.5, y: bot.team === 'blue' ? state.height - 2.2 : 2.2 };
+
+    const visibleEnemies = state.brawlers.filter(
+      (e) => e.team !== bot.team && e.alive && isBrawlerVisibleToTeam(state, e, bot.team),
+    );
+    const aliveAllies = state.brawlers.filter((a) => a.team === bot.team && a.alive);
+    const isHoldingBall = ball.holderSlot === bot.slotIndex;
+    const holder = ball.holderSlot !== null ? state.brawlers[ball.holderSlot] : null;
+    const allyHoldsBall = Boolean(holder && holder.team === bot.team && holder.slotIndex !== bot.slotIndex);
+    const enemyHoldsBall = Boolean(holder && holder.team !== bot.team);
+
+    // Determine who is closest teammate to the ball (primary striker) and who guards own goal
+    const sortedByBallDist = [...aliveAllies].sort(
+      (a, b) => Math.hypot(a.x - ball.x, a.y - ball.y) - Math.hypot(b.x - ball.x, b.y - ball.y),
+    );
+    const isClosestToBall = sortedByBallDist[0]?.slotIndex === bot.slotIndex;
+    const isDefender = sortedByBallDist.length >= 2 && sortedByBallDist[sortedByBallDist.length - 1]?.slotIndex === bot.slotIndex;
+
+    let goal: Vec2;
+    let aimAngle = bot.facing;
+    let fire = false;
+    let superFire = false;
+
+    if (isHoldingBall) {
+      // Dribble aggressively toward enemy goal mouth (aim slightly left/right of central goalie)
+      const laneOff = ((bot.slotIndex % 3) - 1) * 1.4;
+      const aimX = clamp(10.5 + laneOff, 8.2, 12.8);
+      goal = { x: aimX, y: enemyGoal.y };
+
+      const distToGoal = Math.hypot(aimX - bot.x, enemyGoal.y - bot.y);
+      const clearShot = hasLineOfSight(state.grid, bot, { x: aimX, y: enemyGoal.y });
+      const breakableBlock = hasBreakableWallBetween(state.grid, bot, { x: aimX, y: enemyGoal.y });
+
+      if (bot.superCharge >= 100 && distToGoal <= 13.5 && (clearShot || breakableBlock)) {
+        // Blazing Super-Kick straight on goal or smashing breakable goalie cover!
+        aimAngle = Math.atan2(enemyGoal.y - bot.y, aimX - bot.x);
+        superFire = true;
+      } else if (bot.ammo >= 1.0 && distToGoal <= 9.2 && clearShot) {
+        // Crisp open shot into the net!
+        aimAngle = Math.atan2(enemyGoal.y - bot.y, aimX - bot.x);
+        fire = true;
+      } else if (bot.ammo >= 1.0 && hpRatio < 0.34) {
+        // Under heavy pressure: pass forward to best open teammate!
+        const forwardAlly = aliveAllies
+          .filter((a) => a.slotIndex !== bot.slotIndex)
+          .sort(
+            (a, b) =>
+              Math.hypot(a.x - enemyGoal.x, a.y - enemyGoal.y) -
+              Math.hypot(b.x - enemyGoal.x, b.y - enemyGoal.y),
+          )[0];
+        if (forwardAlly && Math.hypot(forwardAlly.x - bot.x, forwardAlly.y - bot.y) < 10.5) {
+          aimAngle = Math.atan2(forwardAlly.y - bot.y, forwardAlly.x - bot.x);
+          fire = true;
+        }
+      }
+    } else if (ball.holderSlot === null) {
+      if (isClosestToBall) {
+        // Sprint directly onto the free ball!
+        goal = { x: ball.x, y: ball.y };
+      } else if (isDefender) {
+        // Hold defensive mid-line between ball and own goal
+        goal = {
+          x: clamp((ball.x + ownGoal.x) * 0.5, 4, state.width - 4),
+          y: clamp((ball.y + ownGoal.y) * 0.5, 3, state.height - 3),
+        };
+      } else {
+        // Advance into forward wing support lane
+        const wingX = bot.slotIndex % 2 === 0 ? 5.5 : 15.5;
+        const fwdY = bot.team === 'blue' ? Math.max(6, ball.y - 4.5) : Math.min(state.height - 6, ball.y + 4.5);
+        goal = { x: wingX, y: fwdY };
+      }
+    } else if (enemyHoldsBall && holder) {
+      if (isDefender) {
+        // Play goalkeeper between enemy ball carrier and our goal mouth!
+        goal = {
+          x: clamp(holder.x * 0.45 + ownGoal.x * 0.55, 6.5, 14.5),
+          y: clamp(holder.y * 0.3 + ownGoal.y * 0.7, 2.5, state.height - 2.5),
+        };
+      } else {
+        // Hunt & tackle enemy ball carrier immediately!
+        goal = { x: holder.x, y: holder.y };
+      }
+    } else if (allyHoldsBall && holder) {
+      // Escort ball carrier by running ahead into a passing/clearing lane
+      const sideX = bot.slotIndex % 2 === 0 ? -4.2 : 4.2;
+      const aheadY = bot.team === 'blue' ? -4.0 : 4.0;
+      goal = {
+        x: clamp(holder.x + sideX, 2.5, state.width - 2.5),
+        y: clamp(holder.y + aheadY, 3.0, state.height - 3.0),
+      };
+    } else {
+      goal = { x: ball.x, y: ball.y };
+    }
+
+    if (mem.pathTimer <= 0 || Math.hypot(mem.waypoint.x - bot.x, mem.waypoint.y - bot.y) < 0.55) {
+      mem.waypoint = findNextWaypoint(state.grid, { x: bot.x, y: bot.y }, goal);
+      mem.pathTimer = 0.2;
+    }
+
+    let moveX = mem.waypoint.x - bot.x;
+    let moveY = mem.waypoint.y - bot.y;
+    const mLen = Math.hypot(moveX, moveY);
+    if (mLen > 0.14) {
+      moveX /= mLen;
+      moveY /= mLen;
+    } else {
+      moveX = 0;
+      moveY = 0;
+    }
+
+    // Dodge enemy projectiles/puddles even during Brawl Ball!
+    const avoid = computeHazardAvoidance(state, bot);
+    moveX += avoid.x * (isHoldingBall ? 0.8 : 1.0);
+    moveY += avoid.y * (isHoldingBall ? 0.8 : 1.0);
+
+    // Combat shooting when NOT holding the ball (prioritize enemy ball carrier!)
+    if (!isHoldingBall && visibleEnemies.length > 0) {
+      let bestTarget: BrawlerState | null = null;
+      let bestScore = -Infinity;
+      for (const e of visibleEnemies) {
+        const d = Math.hypot(e.x - bot.x, e.y - bot.y);
+        const carrierBonus = ball.holderSlot === e.slotIndex ? 14 : 0;
+        const score = carrierBonus + (1 - e.hp / e.maxHp) * 5 - d * 1.1;
+        if (score > bestScore) {
+          bestScore = score;
+          bestTarget = e;
+        }
+      }
+      if (bestTarget) {
+        const dist = Math.hypot(bestTarget.x - bot.x, bestTarget.y - bot.y);
+        const lead = predictIntercept(bot, bestTarget, cfg.attack.speed, 0.82);
+        aimAngle = Math.atan2(lead.y - bot.y, lead.x - bot.x);
+        const canShoot = Boolean(cfg.attack.lobbed) || hasLineOfSight(state.grid, bot, bestTarget);
+
+        if (bot.brawlerId === 'lumi' && bot.superCharge >= 100) {
+          const hurt = aliveAllies.find(
+            (a) => a.hp / a.maxHp < 0.58 && Math.hypot(a.x - bot.x, a.y - bot.y) <= cfg.superAttack.range,
+          );
+          if (hurt) {
+            aimAngle = hurt.slotIndex === bot.slotIndex ? bot.facing : Math.atan2(hurt.y - bot.y, hurt.x - bot.x);
+            superFire = true;
+          }
+        } else if (
+          bot.superCharge >= 100 &&
+          bot.brawlerId !== 'vex' &&
+          dist <= cfg.superAttack.range * 0.9 &&
+          (canShoot || cfg.superAttack.breaksWalls)
+        ) {
+          superFire = true;
+        }
+
+        if (!superFire && bot.ammo >= 1.0 && dist <= cfg.attack.range * 0.96 && canShoot) {
+          fire = true;
+        }
+      }
+    } else if (!fire && !superFire && mLen > 0.14) {
+      aimAngle = Math.atan2(moveY, moveX);
+    }
+
+    const fl = Math.hypot(moveX, moveY);
+    if (fl > 1) {
+      moveX /= fl;
+      moveY /= fl;
+    }
+    return { moveX, moveY, aimAngle, fire, superFire, autoAim: false };
   }
 }

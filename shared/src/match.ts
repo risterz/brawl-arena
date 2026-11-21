@@ -1,7 +1,10 @@
 import { BRAWLERS } from './brawlers';
 import {
   destroyBreakableWallsInRadius,
+  getTile,
+  isTileBlockingProjectile,
   resolveCircleGridCollision,
+  setTile,
 } from './collision';
 import {
   DAMAGE_REVEAL_DURATION,
@@ -11,14 +14,25 @@ import {
   stepProjectiles,
   triggerAttack,
 } from './combat';
-import { createGridCopy, MAP_HEIGHT, MAP_WIDTH, MAPS } from './maps';
 import {
+  BRAWL_BALL_GOAL_MAX_X,
+  BRAWL_BALL_GOAL_MIN_X,
+  createGridCopy,
+  MAP_HEIGHT,
+  MAP_WIDTH,
+  MAPS,
+  prepareBrawlBallGrid,
+} from './maps';
+import {
+  BallState,
   BrawlerState,
+  GameMode,
   MatchConfig,
   MatchEvent,
   MatchState,
   PlayerInput,
   Team,
+  TileType,
 } from './types';
 
 export const GEM_FIRST_SPAWN = 3.0;
@@ -28,6 +42,13 @@ export const GEM_PICKUP_RADIUS = 0.85;
 export const GEM_WIN_THRESHOLD = 10;
 export const GEM_COUNTDOWN_DURATION = 15.0;
 export const MATCH_MAX_DURATION = 210.0;
+export const BRAWL_BALL_MAX_DURATION = 150.0;
+export const BRAWL_BALL_OVERTIME_DURATION = 60.0;
+export const BRAWL_BALL_GOALS_TO_WIN = 2;
+export const BRAWL_BALL_RESET_DURATION = 2.0;
+export const BALL_RADIUS = 0.38;
+export const BALL_KICK_SPEED = 15.0;
+export const BALL_SUPER_KICK_SPEED = 23.0;
 export const SUDDEN_DEATH_DURATION = 30.0;
 export const RESPAWN_DURATION = 4.0;
 export const SPAWN_INVULN_DURATION = 2.5;
@@ -53,16 +74,30 @@ export class MatchEngine {
 
   constructor(config: MatchConfig) {
     const map = MAPS[config.mapId];
+    const mode: GameMode = config.mode ?? 'gem-grab';
     this.rngState = (config.seed ?? 1337) >>> 0;
+
+    const grid = createGridCopy(config.mapId);
+    if (mode === 'brawl-ball') {
+      prepareBrawlBallGrid(grid);
+    }
+
+    const getKickoffSpawn = (team: Team, idx: number) => {
+      if (mode === 'brawl-ball') {
+        const xs = [10.5, 6.5, 14.5];
+        const y = team === 'blue' ? 23.5 : 9.5;
+        return resolveCircleGridCollision(grid, { x: xs[idx % xs.length], y }, 0.45);
+      }
+      return team === 'blue'
+        ? map.spawns.blue[idx % map.spawns.blue.length]
+        : map.spawns.red[idx % map.spawns.red.length];
+    };
 
     let blueIdx = 0;
     let redIdx = 0;
     const brawlers: BrawlerState[] = config.slots.map((slot) => {
       const cfg = BRAWLERS[slot.brawlerId];
-      const spawn =
-        slot.team === 'blue'
-          ? map.spawns.blue[blueIdx++ % map.spawns.blue.length]
-          : map.spawns.red[redIdx++ % map.spawns.red.length];
+      const spawn = getKickoffSpawn(slot.team, slot.team === 'blue' ? blueIdx++ : redIdx++);
       return {
         slotIndex: slot.slotIndex,
         team: slot.team,
@@ -99,26 +134,46 @@ export class MatchEngine {
       };
     });
 
+    const initialBall: BallState | null =
+      mode === 'brawl-ball'
+        ? {
+            x: MAP_WIDTH / 2,
+            y: MAP_HEIGHT / 2,
+            vx: 0,
+            vy: 0,
+            holderSlot: null,
+            lastTouchTeam: null,
+            lastTouchSlot: null,
+            isSuperKick: false,
+            pickupCooldown: 0,
+            kickCooldownSlot: null,
+          }
+        : null;
+
     this.state = {
       mapId: config.mapId,
+      mode,
       width: MAP_WIDTH,
       height: MAP_HEIGHT,
-      grid: createGridCopy(config.mapId),
+      grid,
       phase: 'playing',
       elapsed: 0,
-      maxDuration: MATCH_MAX_DURATION,
-      suddenDeathRemaining: SUDDEN_DEATH_DURATION,
+      maxDuration: mode === 'brawl-ball' ? BRAWL_BALL_MAX_DURATION : MATCH_MAX_DURATION,
+      suddenDeathRemaining: mode === 'brawl-ball' ? BRAWL_BALL_OVERTIME_DURATION : SUDDEN_DEATH_DURATION,
       gemSpawnTimer: GEM_FIRST_SPAWN,
       gemsSpawnedTotal: 0,
       maxGemsTotal: GEM_MAX_TOTAL,
       countdownTeam: null,
       countdownTimer: GEM_COUNTDOWN_DURATION,
+      goalResetTimer: 0,
+      lastGoalTeam: null,
       winner: null,
       starPlayerSlot: 0,
       brawlers,
       projectiles: [],
       hazards: [],
       gems: [],
+      ball: initialBall,
       blueGems: 0,
       redGems: 0,
       nextEntityId: 1,
@@ -176,7 +231,17 @@ export class MatchEngine {
         attacker.stats.kills += 1;
       }
 
-      // Scatter carried gems around death position
+      // Drop ball if target was holding it in Brawl Ball
+      if (this.state.ball && this.state.ball.holderSlot === target.slotIndex) {
+        this.state.ball.holderSlot = null;
+        this.state.ball.x = target.x;
+        this.state.ball.y = target.y;
+        this.state.ball.vx = (this.nextRand() - 0.5) * 3.0;
+        this.state.ball.vy = (this.nextRand() - 0.5) * 3.0;
+        this.state.ball.isSuperKick = false;
+      }
+
+      // Scatter carried gems around death position (Gem Grab)
       const dropCount = target.gems;
       target.gems = 0;
       for (let i = 0; i < dropCount; i++) {
@@ -206,7 +271,7 @@ export class MatchEngine {
         y: target.y,
       });
 
-      if (this.state.phase === 'sudden_death' && attacker) {
+      if (this.state.mode === 'gem-grab' && this.state.phase === 'sudden_death' && attacker) {
         this.finishMatch(attacker.team);
       }
     }
@@ -251,6 +316,15 @@ export class MatchEngine {
 
     const events = this.pendingEvents;
     this.pendingEvents = [];
+
+    // Goal celebration freeze before resetting kickoff in Brawl Ball
+    if (this.state.mode === 'brawl-ball' && this.state.goalResetTimer > 0) {
+      this.state.goalResetTimer = Math.max(0, this.state.goalResetTimer - dt);
+      if (this.state.goalResetTimer <= 0) {
+        this.resetBrawlBallKickoff();
+      }
+      return events;
+    }
 
     this.state.elapsed += dt;
     const map = MAPS[this.state.mapId];
@@ -395,9 +469,15 @@ export class MatchEngine {
         b.facing = Math.atan2(my, mx);
       }
 
-      // Handle Super or Primary fire (Super input never falls through into primary ammo)
+      // Handle Super or Primary fire — in Brawl Ball, firing while holding the ball KICKS it!
+      const holdingBall = Boolean(this.state.ball && this.state.ball.holderSlot === b.slotIndex);
       if (inp.superFire) {
-        if (b.superCharge >= 100 && !b.burst) {
+        if (holdingBall && b.superCharge >= 100 && !b.burst) {
+          b.superCharge = 0;
+          b.attackCooldown = cfg.attackCooldown;
+          const aim = inp.autoAim ? (b.team === 'blue' ? -Math.PI / 2 : Math.PI / 2) : inp.aimAngle;
+          this.kickBall(b, aim, true, events);
+        } else if (!holdingBall && b.superCharge >= 100 && !b.burst) {
           b.superCharge = 0;
           b.attackCooldown = cfg.attackCooldown;
           const aim = inp.autoAim
@@ -408,14 +488,22 @@ export class MatchEngine {
         inp.superFire = false;
         inp.autoAim = false;
       } else if ((inp.fire || inp.autoAim) && b.ammo >= 1.0 && b.attackCooldown <= 0 && !b.burst) {
-        const autoAngle = inp.autoAim
-          ? findAutoAimAngle(this.state, b, cfg.attack.range)
-          : null;
-        const aim = inp.autoAim ? (autoAngle ?? b.facing) : inp.aimAngle;
-        b.ammo -= 1.0;
-        b.attackCooldown = cfg.attackCooldown;
-        triggerAttack(this.state, b, aim, false, events, this.callbacks);
-        inp.autoAim = false;
+        if (holdingBall) {
+          const aim = inp.autoAim ? (b.team === 'blue' ? -Math.PI / 2 : Math.PI / 2) : inp.aimAngle;
+          b.ammo -= 1.0;
+          b.attackCooldown = cfg.attackCooldown;
+          this.kickBall(b, aim, false, events);
+          inp.autoAim = false;
+        } else {
+          const autoAngle = inp.autoAim
+            ? findAutoAimAngle(this.state, b, cfg.attack.range)
+            : null;
+          const aim = inp.autoAim ? (autoAngle ?? b.facing) : inp.aimAngle;
+          b.ammo -= 1.0;
+          b.attackCooldown = cfg.attackCooldown;
+          triggerAttack(this.state, b, aim, false, events, this.callbacks);
+          inp.autoAim = false;
+        }
       }
     }
 
@@ -423,7 +511,12 @@ export class MatchEngine {
     stepProjectiles(this.state, dt, events, this.callbacks);
     stepHazards(this.state, dt, events, this.callbacks);
 
-    // 3. Gem mine spawning
+    if (this.state.mode === 'brawl-ball') {
+      this.stepBrawlBall(dt, events);
+      return events;
+    }
+
+    // 3. Gem mine spawning (Gem Grab mode)
     if (this.state.gemsSpawnedTotal < this.state.maxGemsTotal) {
       this.state.gemSpawnTimer -= dt;
       if (this.state.gemSpawnTimer <= 0) {
@@ -536,6 +629,266 @@ export class MatchEngine {
     }
 
     return events;
+  }
+
+  private kickBall(kicker: BrawlerState, angle: number, isSuper: boolean, events: MatchEvent[]): void {
+    const ball = this.state.ball;
+    if (!ball) return;
+    const speed = isSuper ? BALL_SUPER_KICK_SPEED : BALL_KICK_SPEED;
+    kicker.facing = angle;
+    kicker.recoilTimer = 0.2;
+    kicker.outOfCombatTimer = 0;
+    kicker.healTickTimer = 0;
+    ball.holderSlot = null;
+    ball.x = kicker.x + Math.cos(angle) * 0.52;
+    ball.y = kicker.y + Math.sin(angle) * 0.52;
+    ball.vx = Math.cos(angle) * speed;
+    ball.vy = Math.sin(angle) * speed;
+    ball.lastTouchTeam = kicker.team;
+    ball.lastTouchSlot = kicker.slotIndex;
+    ball.isSuperKick = isSuper;
+    ball.pickupCooldown = 0.28;
+    ball.kickCooldownSlot = kicker.slotIndex;
+    events.push({ type: 'ball_kick', slotIndex: kicker.slotIndex, isSuper, x: ball.x, y: ball.y });
+  }
+
+  private resetBrawlBallKickoff(): void {
+    const xs = [10.5, 6.5, 14.5];
+    let blueIdx = 0;
+    let redIdx = 0;
+    for (const b of this.state.brawlers) {
+      const cfg = BRAWLERS[b.brawlerId];
+      const idx = b.team === 'blue' ? blueIdx++ : redIdx++;
+      const sp = resolveCircleGridCollision(
+        this.state.grid,
+        { x: xs[idx % xs.length], y: b.team === 'blue' ? 23.5 : 9.5 },
+        0.45,
+      );
+      b.x = sp.x;
+      b.y = sp.y;
+      b.vx = 0;
+      b.vy = 0;
+      b.facing = b.team === 'blue' ? -Math.PI / 2 : Math.PI / 2;
+      b.hp = b.maxHp;
+      b.ammo = cfg.maxAmmo;
+      b.alive = true;
+      b.respawnTimer = 0;
+      b.invulnTimer = 1.0;
+      b.leap = null;
+      b.burst = null;
+    }
+    this.state.projectiles = [];
+    this.state.hazards = [];
+    this.state.lastGoalTeam = null;
+    if (this.state.ball) {
+      this.state.ball.x = MAP_WIDTH / 2;
+      this.state.ball.y = MAP_HEIGHT / 2;
+      this.state.ball.vx = 0;
+      this.state.ball.vy = 0;
+      this.state.ball.holderSlot = null;
+      this.state.ball.isSuperKick = false;
+      this.state.ball.pickupCooldown = 0;
+      this.state.ball.kickCooldownSlot = null;
+    }
+  }
+
+  private stepBrawlBall(dt: number, events: MatchEvent[]): void {
+    const ball = this.state.ball;
+    if (!ball) return;
+
+    if (ball.pickupCooldown > 0) {
+      ball.pickupCooldown = Math.max(0, ball.pickupCooldown - dt);
+      if (ball.pickupCooldown <= 0) ball.kickCooldownSlot = null;
+    }
+
+    // 1. Dribbling holder carries the ball in front of facing direction (drops if dead or leaping)
+    if (ball.holderSlot !== null) {
+      const holder = this.state.brawlers[ball.holderSlot];
+      if (!holder || !holder.alive || holder.leap) {
+        ball.holderSlot = null;
+        ball.isSuperKick = false;
+      } else {
+        ball.x = holder.x + Math.cos(holder.facing) * 0.56;
+        ball.y = holder.y + Math.sin(holder.facing) * 0.56;
+        ball.vx = holder.vx;
+        ball.vy = holder.vy;
+        ball.lastTouchTeam = holder.team;
+        ball.lastTouchSlot = holder.slotIndex;
+      }
+    }
+
+    // 2. Free ball physics (sub-stepped bouncing, Super-Kick wall smashing, ground friction)
+    if (ball.holderSlot === null) {
+      const subSteps = 3;
+      const subDt = dt / subSteps;
+      for (let s = 0; s < subSteps; s++) {
+        const nextX = ball.x + ball.vx * subDt;
+        const nextY = ball.y + ball.vy * subDt;
+
+        // X collision check
+        const txX = Math.floor(nextX + Math.sign(ball.vx || 1) * BALL_RADIUS);
+        const tyX = Math.floor(ball.y);
+        const tileX = getTile(this.state.grid, txX, tyX);
+        if (isTileBlockingProjectile(tileX)) {
+          if (ball.isSuperKick && tileX === TileType.WALL_BREAKABLE) {
+            setTile(this.state.grid, txX, tyX, TileType.EMPTY);
+            events.push({ type: 'wall_break', tiles: [{ tx: txX, ty: tyX }] });
+            ball.x = nextX;
+          } else {
+            ball.vx = -ball.vx * 0.72;
+          }
+        } else {
+          ball.x = nextX;
+        }
+
+        // Y collision check
+        const txY = Math.floor(ball.x);
+        const tyY = Math.floor(nextY + Math.sign(ball.vy || 1) * BALL_RADIUS);
+        const tileY = getTile(this.state.grid, txY, tyY);
+        if (isTileBlockingProjectile(tileY)) {
+          if (ball.isSuperKick && tileY === TileType.WALL_BREAKABLE) {
+            setTile(this.state.grid, txY, tyY, TileType.EMPTY);
+            events.push({ type: 'wall_break', tiles: [{ tx: txY, ty: tyY }] });
+            ball.y = nextY;
+          } else {
+            ball.vy = -ball.vy * 0.72;
+          }
+        } else {
+          ball.y = nextY;
+        }
+
+        // Keep ball inside pitch bounds (allowing entry into open goal mouths!)
+        ball.x = Math.max(1.0 + BALL_RADIUS, Math.min(MAP_WIDTH - 1.0 - BALL_RADIUS, ball.x));
+        const inGoalX = ball.x >= BRAWL_BALL_GOAL_MIN_X && ball.x <= BRAWL_BALL_GOAL_MAX_X;
+        if (!inGoalX) {
+          if (ball.y < 1.0 + BALL_RADIUS) {
+            ball.y = 1.0 + BALL_RADIUS;
+            ball.vy = Math.abs(ball.vy) * 0.72;
+          } else if (ball.y > MAP_HEIGHT - 1.0 - BALL_RADIUS) {
+            ball.y = MAP_HEIGHT - 1.0 - BALL_RADIUS;
+            ball.vy = -Math.abs(ball.vy) * 0.72;
+          }
+        } else {
+          ball.y = Math.max(0.35, Math.min(MAP_HEIGHT - 0.35, ball.y));
+        }
+
+        // Pickup check by any alive non-leaping brawler
+        for (const b of this.state.brawlers) {
+          if (!b.alive || b.leap) continue;
+          if (ball.kickCooldownSlot === b.slotIndex && ball.pickupCooldown > 0) continue;
+          const dist = Math.hypot(b.x - ball.x, b.y - ball.y);
+          if (dist <= BRAWLERS[b.brawlerId].radius + BALL_RADIUS + 0.14) {
+            ball.holderSlot = b.slotIndex;
+            ball.lastTouchTeam = b.team;
+            ball.lastTouchSlot = b.slotIndex;
+            ball.isSuperKick = false;
+            ball.pickupCooldown = 0;
+            ball.kickCooldownSlot = null;
+            break;
+          }
+        }
+        if (ball.holderSlot !== null) break;
+      }
+
+      // Smooth turf rolling friction
+      const drag = Math.exp(-2.35 * dt);
+      ball.vx *= drag;
+      ball.vy *= drag;
+      if (Math.hypot(ball.vx, ball.vy) < 4.5) {
+        ball.isSuperKick = false;
+      }
+      if (Math.hypot(ball.vx, ball.vy) < 0.15) {
+        ball.vx = 0;
+        ball.vy = 0;
+      }
+    }
+
+    // 3. Goal line detection (with anti-own-goal protection!)
+    const inGoalX = ball.x >= BRAWL_BALL_GOAL_MIN_X + 0.15 && ball.x <= BRAWL_BALL_GOAL_MAX_X - 0.15;
+    let scoredTeam: Team | null = null;
+
+    if (inGoalX && ball.y <= 1.08) {
+      // North (Red) Goal -> Blue scores!
+      if (ball.lastTouchTeam === 'blue') {
+        scoredTeam = 'blue';
+      } else {
+        // Prevent accidental Red own-goal: bounce cleanly off Red goal line
+        ball.y = 1.25;
+        ball.vy = Math.abs(ball.vy) * 0.5 + 1.5;
+      }
+    } else if (inGoalX && ball.y >= MAP_HEIGHT - 1.08) {
+      // South (Blue) Goal -> Red scores!
+      if (ball.lastTouchTeam === 'red') {
+        scoredTeam = 'red';
+      } else {
+        // Prevent accidental Blue own-goal
+        ball.y = MAP_HEIGHT - 1.25;
+        ball.vy = -(Math.abs(ball.vy) * 0.5 + 1.5);
+      }
+    }
+
+    if (scoredTeam) {
+      if (scoredTeam === 'blue') this.state.blueGems += 1;
+      else this.state.redGems += 1;
+
+      const scorer =
+        ball.lastTouchSlot !== null ? this.state.brawlers[ball.lastTouchSlot] : undefined;
+      if (scorer && scorer.team === scoredTeam) {
+        scorer.stats.gemsCollected += 1; // Tracks Goals Scored in Brawl Ball!
+      }
+      this.state.lastGoalTeam = scoredTeam;
+      events.push({
+        type: 'goal',
+        team: scoredTeam,
+        scorerSlot: scorer ? scorer.slotIndex : -1,
+        blueScore: this.state.blueGems,
+        redScore: this.state.redGems,
+      });
+
+      if (
+        this.state.blueGems >= BRAWL_BALL_GOALS_TO_WIN ||
+        this.state.redGems >= BRAWL_BALL_GOALS_TO_WIN ||
+        this.state.phase === 'sudden_death'
+      ) {
+        this.finishMatch(scoredTeam, events);
+      } else {
+        this.state.goalResetTimer = BRAWL_BALL_RESET_DURATION;
+        ball.holderSlot = null;
+        ball.vx = 0;
+        ball.vy = 0;
+      }
+      return;
+    }
+
+    // 4. Match timer & Overtime (smashes ALL breakable walls on pitch!)
+    if (this.state.phase === 'playing' && this.state.elapsed >= this.state.maxDuration) {
+      if (this.state.blueGems > this.state.redGems) {
+        this.finishMatch('blue', events);
+      } else if (this.state.redGems > this.state.blueGems) {
+        this.finishMatch('red', events);
+      } else {
+        this.state.phase = 'sudden_death';
+        this.state.suddenDeathRemaining = BRAWL_BALL_OVERTIME_DURATION;
+        // Classic Brawl Ball Overtime: smash every breakable cover wall!
+        const allBroken: Array<{ tx: number; ty: number }> = [];
+        for (let ty = 1; ty < MAP_HEIGHT - 1; ty++) {
+          for (let tx = 1; tx < MAP_WIDTH - 1; tx++) {
+            if (getTile(this.state.grid, tx, ty) === TileType.WALL_BREAKABLE) {
+              setTile(this.state.grid, tx, ty, TileType.EMPTY);
+              allBroken.push({ tx, ty });
+            }
+          }
+        }
+        if (allBroken.length > 0) {
+          events.push({ type: 'wall_break', tiles: allBroken });
+        }
+      }
+    } else if (this.state.phase === 'sudden_death') {
+      this.state.suddenDeathRemaining -= dt;
+      if (this.state.suddenDeathRemaining <= 0) {
+        this.finishMatch('draw', events);
+      }
+    }
   }
 
   private finishMatch(winner: Team | 'draw', events?: MatchEvent[]): void {

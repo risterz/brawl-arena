@@ -23,7 +23,8 @@ export type ModelKey =
   | 'power_fist'
   | 'potion_flask'
   | 'music_note'
-  | 'bomb';
+  | 'bomb'
+  | 'brawl_ball';
 
 export const MODEL_MANIFEST: Record<ModelKey, string> = {
   buck: '/models/buck.glb',
@@ -47,6 +48,7 @@ export const MODEL_MANIFEST: Record<ModelKey, string> = {
   potion_flask: '/models/potion_flask.glb',
   music_note: '/models/music_note.glb',
   bomb: '/models/bomb.glb',
+  brawl_ball: '/models/brawl_ball.glb',
 };
 
 interface BankEntry {

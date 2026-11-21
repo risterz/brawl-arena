@@ -357,6 +357,17 @@ export class ControlManager {
   ): { input: PlayerInput; telegraph: AimTelegraphInput | null } {
     const me = state.brawlers[localSlot];
     const team: Team = me ? me.team : 'blue';
+    const holdingBall = Boolean(state.ball && me && state.ball.holderSlot === me.slotIndex);
+    const ballKickSpec = (isSuper: boolean) => ({
+      shape: 'line' as const,
+      range: isSuper ? 14.5 : 9.2,
+      spreadRad: 0,
+      projectiles: 1,
+      speed: isSuper ? 23 : 15,
+      radius: 0.42,
+      damage: 0,
+      superChargePerHit: 0,
+    });
 
     if (this.superStickEl && me) {
       const pct = Math.max(0, Math.min(100, Math.round(me.superCharge)));
@@ -398,13 +409,27 @@ export class ControlManager {
         aimAngle = screenAimToWorldAngle(this.superStick.dx, this.superStick.dy, team);
         this.lastAimAngle = aimAngle;
         if (me && cfg && me.alive) {
-          telegraph = { active: true, isSuper: true, x: me.x, y: me.y, angle: aimAngle, spec: cfg.superAttack };
+          telegraph = {
+            active: true,
+            isSuper: true,
+            x: me.x,
+            y: me.y,
+            angle: aimAngle,
+            spec: holdingBall ? ballKickSpec(true) : cfg.superAttack,
+          };
         }
       } else if (this.aimStick.active && Math.hypot(this.aimStick.dx, this.aimStick.dy) > 0.18) {
         aimAngle = screenAimToWorldAngle(this.aimStick.dx, this.aimStick.dy, team);
         this.lastAimAngle = aimAngle;
         if (me && cfg && me.alive) {
-          telegraph = { active: true, isSuper: false, x: me.x, y: me.y, angle: aimAngle, spec: cfg.attack };
+          telegraph = {
+            active: true,
+            isSuper: false,
+            x: me.x,
+            y: me.y,
+            angle: aimAngle,
+            spec: holdingBall ? ballKickSpec(false) : cfg.attack,
+          };
         }
       }
     } else if (me && me.alive) {
@@ -421,7 +446,7 @@ export class ControlManager {
           x: me.x,
           y: me.y,
           angle: aimAngle,
-          spec: superPreview ? cfg.superAttack : cfg.attack,
+          spec: holdingBall ? ballKickSpec(superPreview) : superPreview ? cfg.superAttack : cfg.attack,
         };
       }
     }

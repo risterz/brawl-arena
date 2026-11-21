@@ -3,6 +3,7 @@ import {
   BRAWLER_LIST,
   BrawlerId,
   BRAWLERS,
+  GameMode,
   MapId,
   MatchEngine,
   MatchEvent,
@@ -13,6 +14,7 @@ import {
 
 export interface LocalMatchOptions {
   mapId: MapId;
+  mode?: GameMode;
   playerBrawler: BrawlerId;
   playerName: string;
 }
@@ -71,6 +73,7 @@ export class LocalMatchController {
 
     this.engine = new MatchEngine({
       mapId: opts.mapId,
+      mode: opts.mode ?? 'gem-grab',
       slots,
       seed: Date.now() & 0xfffffff,
     });
