@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
+import fs from 'node:fs';
+import path from 'node:path';
 import { BRAWLER_LIST } from '@brawl-arena/shared';
 import {
   createProjectileVisual,
@@ -8,6 +10,13 @@ import {
   createFlameGeometry,
   createHealCrossGeometry,
 } from '../src/render/projectileMeshes';
+import {
+  MODEL_MANIFEST,
+  ModelKey,
+  cloneModel,
+  registerModelForTest,
+  clearModelsForTest,
+} from '../src/render/modelBank';
 
 describe('Sculpted 3D projectile, bomb, crystal, flame, and heal meshes', () => {
   it('builds distinct multi-part sculpted visuals (not plain spheres) for every brawler primary and Super', () => {
@@ -42,5 +51,29 @@ describe('Sculpted 3D projectile, bomb, crystal, flame, and heal meshes', () => 
 
     const crossGeo = createHealCrossGeometry();
     expect(crossGeo.attributes.position.count).toBeGreaterThan(20);
+  });
+
+  it('has all 18 Blender GLB models present in client/public/models and isolates cloned materials when requested', () => {
+    const keys = Object.keys(MODEL_MANIFEST) as ModelKey[];
+    expect(keys).toHaveLength(18);
+    const modelsDir = path.resolve(__dirname, '../public/models');
+    for (const k of keys) {
+      const rel = MODEL_MANIFEST[k].replace(/^\/models\//, '');
+      const fullPath = path.join(modelsDir, rel);
+      expect(fs.existsSync(fullPath), `Missing GLB: ${fullPath}`).toBe(true);
+      expect(fs.statSync(fullPath).size).toBeGreaterThan(1000);
+    }
+
+    clearModelsForTest();
+    const proto = new THREE.Group();
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xff0000 }));
+    proto.add(mesh);
+    registerModelForTest('buck', proto);
+
+    const c1 = cloneModel('buck', true)!;
+    const c2 = cloneModel('buck', true)!;
+    expect(c1).not.toBeNull();
+    expect((c1.children[0] as THREE.Mesh).material).not.toBe((c2.children[0] as THREE.Mesh).material);
+    clearModelsForTest();
   });
 });

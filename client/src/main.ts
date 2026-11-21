@@ -5,6 +5,7 @@ import { ControlManager } from './input/controls';
 import { LocalMatchController } from './net/localController';
 import { OnlineMatchController } from './net/onlineController';
 import { ArenaRenderer } from './render/arenaScene';
+import { preloadAllModels } from './render/modelBank';
 import { MatchHud } from './ui/hud';
 import { ScreenManager } from './ui/screens';
 
@@ -192,6 +193,11 @@ function boot(): void {
   }
 
   window.addEventListener('resize', () => renderer.resize());
+
+  // Preload all 18 Blender GLB models and refresh the turntable as soon as ready
+  void preloadAllModels().then(() => {
+    renderer.refreshPreview();
+  });
 
   // Check for invite URL /?room=XXXX
   const params = new URLSearchParams(window.location.search);

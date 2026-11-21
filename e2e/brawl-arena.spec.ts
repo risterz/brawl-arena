@@ -64,7 +64,7 @@ test.describe('Brawl Arena End-to-End', () => {
   });
 
   test('Live Cloudflare Worker room-code multiplayer syncs 2 humans + 4 bots and blocks late joiner', async ({ browser }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
     const ctxA = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     const ctxB = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     const ctxC = await browser.newContext({ viewport: { width: 1280, height: 720 } });

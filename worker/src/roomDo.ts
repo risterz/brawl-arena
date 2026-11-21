@@ -395,8 +395,17 @@ export class RoomManager {
     }
   }
 
-  public handleMessage(ws: SocketLike, rawData: string): void {
-    const slotIdx = this.socketToSlot.get(ws);
+  public handleMessage(ws: SocketLike, rawData: string, fallbackToken?: string): void {
+    let slotIdx = this.socketToSlot.get(ws);
+    if (slotIdx === undefined && fallbackToken) {
+      const matched = this.slots.find((s) => s.token === fallbackToken);
+      if (matched) {
+        matched.socket = ws;
+        matched.connected = true;
+        this.socketToSlot.set(ws, matched.slotIndex);
+        slotIdx = matched.slotIndex;
+      }
+    }
     if (slotIdx === undefined) return;
     const slot = this.slots[slotIdx];
     if (!slot) return;
@@ -738,7 +747,7 @@ export class RoomDurableObject {
     if (typeof message !== 'string') return;
     const meta = (ws.deserializeAttachment() as Partial<HibernatedSocketMeta> | null) ?? {};
     const mgr = this.getManager(meta.code ?? 'ROOM');
-    mgr.handleMessage(ws, message);
+    mgr.handleMessage(ws, message, meta.token);
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {

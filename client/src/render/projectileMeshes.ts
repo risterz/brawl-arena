@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { BrawlerId, BRAWLERS, Team } from '@brawl-arena/shared';
+import { cloneModel } from './modelBank';
 
 export interface ProjectileVisualSpec {
   brawlerId: BrawlerId;
@@ -230,12 +231,27 @@ function getBombFuseGeo(): THREE.BufferGeometry {
   return cachedBombFuseGeo;
 }
 
-/** Builds a real cartoon iron bomb with collar, curved fuse rope, and flickering teardrop flame. */
+/** Builds a real cartoon iron bomb (Blender GLB + live flickering teardrop flame tip). */
 export function createBombVisual(): THREE.Group {
   const grp = new THREE.Group();
   grp.name = 'hazard-bomb';
 
-  // Cast-iron body (faceted icosahedron-style stylized cartoon bomb)
+  const glb = cloneModel('bomb');
+  if (glb) {
+    glb.name = 'bomb-fuse';
+    grp.add(glb);
+    const flame = new THREE.Mesh(
+      createFlameGeometry(),
+      new THREE.MeshBasicMaterial({ color: 0xffae24 }),
+    );
+    flame.name = 'bomb-flame';
+    flame.position.set(0.24, 0.90, -0.06);
+    flame.scale.set(0.45, 0.36, 0.45);
+    grp.add(flame);
+    return grp;
+  }
+
+  // Fallback procedural iron bomb
   const body = new THREE.Mesh(
     new THREE.IcosahedronGeometry(0.31, 2),
     new THREE.MeshToonMaterial({ color: 0x202736, emissive: 0x150811 }),
@@ -244,7 +260,6 @@ export function createBombVisual(): THREE.Group {
   body.castShadow = true;
   grp.add(body);
 
-  // Red warning stripe ring
   const stripe = new THREE.Mesh(
     new THREE.TorusGeometry(0.305, 0.035, 8, 18),
     new THREE.MeshBasicMaterial({ color: 0xff4757 }),
@@ -253,7 +268,6 @@ export function createBombVisual(): THREE.Group {
   stripe.position.y = 0.31;
   grp.add(stripe);
 
-  // Metal fuse collar
   const collar = new THREE.Mesh(
     new THREE.CylinderGeometry(0.11, 0.13, 0.12, 10),
     new THREE.MeshToonMaterial({ color: 0x62728f }),
@@ -261,7 +275,6 @@ export function createBombVisual(): THREE.Group {
   collar.position.y = 0.6;
   grp.add(collar);
 
-  // Curved rope fuse
   const fuse = new THREE.Mesh(
     getBombFuseGeo(),
     new THREE.MeshToonMaterial({ color: 0xd9b382 }),
@@ -270,7 +283,6 @@ export function createBombVisual(): THREE.Group {
   fuse.position.y = 0.28;
   grp.add(fuse);
 
-  // Live flickering flame tongue at fuse tip
   const flame = new THREE.Mesh(
     createFlameGeometry(),
     new THREE.MeshBasicMaterial({ color: 0xffae24 }),
@@ -283,27 +295,36 @@ export function createBombVisual(): THREE.Group {
   return grp;
 }
 
-/** Builds a faceted glowing crystal gem pickup with aura ring. */
+/** Builds a faceted glowing crystal gem pickup (Blender GLB + aura ring). */
 export function createGemCrystalVisual(): THREE.Group {
   const grp = new THREE.Group();
   grp.name = 'gem-crystal';
 
-  const crystal = new THREE.Mesh(
-    getGemCrystalGeo(),
-    new THREE.MeshToonMaterial({ color: 0xd946ff, emissive: 0x6c00c9 }),
-  );
-  crystal.name = 'gem-core';
-  crystal.position.y = 0.56;
-  crystal.castShadow = true;
-  grp.add(crystal);
+  const glb = cloneModel('gem');
+  if (glb) {
+    const core = new THREE.Group();
+    core.name = 'gem-core';
+    glb.position.y = -0.5;
+    core.add(glb);
+    core.position.y = 0.56;
+    grp.add(core);
+  } else {
+    const crystal = new THREE.Mesh(
+      getGemCrystalGeo(),
+      new THREE.MeshToonMaterial({ color: 0xd946ff, emissive: 0x6c00c9 }),
+    );
+    crystal.name = 'gem-core';
+    crystal.position.y = 0.56;
+    crystal.castShadow = true;
+    grp.add(crystal);
 
-  // Bright inner facet highlight crown
-  const highlight = new THREE.Mesh(
-    getGemCrystalGeo(),
-    new THREE.MeshBasicMaterial({ color: 0xf7b8ff, wireframe: true, transparent: true, opacity: 0.4 }),
-  );
-  highlight.scale.setScalar(1.04);
-  crystal.add(highlight);
+    const highlight = new THREE.Mesh(
+      getGemCrystalGeo(),
+      new THREE.MeshBasicMaterial({ color: 0xf7b8ff, wireframe: true, transparent: true, opacity: 0.4 }),
+    );
+    highlight.scale.setScalar(1.04);
+    crystal.add(highlight);
+  }
 
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.32, 0.47, 18),
@@ -334,8 +355,22 @@ export function createProjectileVisual(spec: ProjectileVisualSpec): THREE.Group 
   const teamTint = spec.team === 'blue' ? cfg.accentColor : '#ff5a6e';
 
   if (spec.brawlerId === 'blaze') {
-    // Real cartridge bullet: brass casing + copper/gold pointed ogive warhead + fiery tracer cone
     const scale = spec.isSuper ? 1.45 : 1.05;
+    const glb = cloneModel('bullet');
+    const tracer = new THREE.Mesh(
+      getTracerConeGeo(),
+      new THREE.MeshBasicMaterial({
+        color: spec.isSuper ? 0xffe066 : 0xff922b,
+        transparent: true,
+        opacity: 0.78,
+        side: THREE.DoubleSide,
+      }),
+    );
+    if (glb) {
+      grp.add(glb, tracer);
+      grp.scale.setScalar(scale);
+      return grp;
+    }
     const casing = new THREE.Mesh(
       getBulletCasingGeo(),
       new THREE.MeshToonMaterial({ color: spec.isSuper ? 0xffd43b : 0xe3a844 }),
@@ -347,15 +382,6 @@ export function createProjectileVisual(spec: ProjectileVisualSpec): THREE.Group 
         emissive: spec.isSuper ? 0x661500 : 0x2a0c00,
       }),
     );
-    const tracer = new THREE.Mesh(
-      getTracerConeGeo(),
-      new THREE.MeshBasicMaterial({
-        color: spec.isSuper ? 0xffe066 : 0xff922b,
-        transparent: true,
-        opacity: 0.78,
-        side: THREE.DoubleSide,
-      }),
-    );
     grp.add(casing, tip, tracer);
     grp.scale.setScalar(scale);
     return grp;
@@ -363,7 +389,6 @@ export function createProjectileVisual(spec: ProjectileVisualSpec): THREE.Group 
 
   if (spec.brawlerId === 'buck') {
     if (spec.isSuper) {
-      // Blazing shockwave crescent blade + inner hot core + flame trail
       const blade = new THREE.Mesh(
         getCrescentBladeGeo(),
         new THREE.MeshToonMaterial({ color: 0xffd43b, emissive: 0x994400 }),
@@ -384,7 +409,17 @@ export function createProjectileVisual(spec: ProjectileVisualSpec): THREE.Group 
       return grp;
     }
 
-    // Shotgun brass-rimmed red shell slug + bright blast streak
+    const trail = new THREE.Mesh(
+      getTracerConeGeo(),
+      new THREE.MeshBasicMaterial({ color: 0xffae34, transparent: true, opacity: 0.58, side: THREE.DoubleSide }),
+    );
+    trail.scale.set(0.65, 0.85, 0.85);
+    const glb = cloneModel('shotgun_shell');
+    if (glb) {
+      grp.add(glb, trail);
+      return grp;
+    }
+
     const shell = new THREE.Mesh(
       new THREE.CylinderGeometry(0.11, 0.11, 0.34, 10),
       new THREE.MeshToonMaterial({ color: spec.team === 'blue' ? 0x9b5cff : 0xff4757 }),
@@ -402,17 +437,21 @@ export function createProjectileVisual(spec: ProjectileVisualSpec): THREE.Group 
     );
     nose.rotation.z = -Math.PI / 2;
     nose.position.x = 0.25;
-    const trail = new THREE.Mesh(
-      getTracerConeGeo(),
-      new THREE.MeshBasicMaterial({ color: 0xffae34, transparent: true, opacity: 0.58, side: THREE.DoubleSide }),
-    );
-    trail.scale.set(0.65, 0.85, 0.85);
     grp.add(shell, brassBase, nose, trail);
     return grp;
   }
 
   if (spec.brawlerId === 'vex') {
-    // Sleek star-sniper finned energy spear/bolt
+    const streak = new THREE.Mesh(
+      getTracerConeGeo(),
+      new THREE.MeshBasicMaterial({ color: 0x62e2ff, transparent: true, opacity: 0.62, side: THREE.DoubleSide }),
+    );
+    streak.scale.set(1.25, 0.7, 0.7);
+    const glb = cloneModel('sniper_bolt');
+    if (glb) {
+      grp.add(glb, streak);
+      return grp;
+    }
     const shaft = new THREE.Mesh(
       new THREE.CylinderGeometry(0.055, 0.075, 0.88, 8),
       new THREE.MeshToonMaterial({ color: 0x36c9ff, emissive: 0x0a4d78 }),
@@ -425,7 +464,6 @@ export function createProjectileVisual(spec: ProjectileVisualSpec): THREE.Group 
     spearHead.rotation.z = -Math.PI / 2;
     spearHead.position.x = 0.56;
 
-    // 3 swept tail fins
     const finGeo = new THREE.BoxGeometry(0.28, 0.03, 0.28);
     const finMat = new THREE.MeshBasicMaterial({ color: 0x9ef0ff });
     for (let i = 0; i < 3; i++) {
@@ -434,48 +472,48 @@ export function createProjectileVisual(spec: ProjectileVisualSpec): THREE.Group 
       fin.rotation.x = (i / 3) * Math.PI;
       grp.add(fin);
     }
-
-    const streak = new THREE.Mesh(
-      getTracerConeGeo(),
-      new THREE.MeshBasicMaterial({ color: 0x62e2ff, transparent: true, opacity: 0.62, side: THREE.DoubleSide }),
-    );
-    streak.scale.set(1.25, 0.7, 0.7);
     grp.add(shaft, spearHead, streak);
     return grp;
   }
 
   if (spec.brawlerId === 'golem') {
-    // Sculpted 3D fiery power fist + punching shockwave crescent
-    const palm = new THREE.Mesh(
-      new THREE.BoxGeometry(0.36, 0.34, 0.42),
-      new THREE.MeshToonMaterial({ color: 0xff9624, emissive: 0x5c2600 }),
-    );
-    palm.position.x = 0.1;
-    // Knuckle ridge
-    const knuckles = new THREE.Mesh(
-      new THREE.BoxGeometry(0.16, 0.26, 0.46),
-      new THREE.MeshToonMaterial({ color: 0xffe57f }),
-    );
-    knuckles.position.x = 0.3;
-    // Thumb
-    const thumb = new THREE.Mesh(
-      new THREE.BoxGeometry(0.2, 0.14, 0.14),
-      new THREE.MeshToonMaterial({ color: 0xff9624 }),
-    );
-    thumb.position.set(0.12, 0.14, 0.26);
-    // Impact shock crescent ahead of fist
     const arc = new THREE.Mesh(
       getCrescentBladeGeo(),
       new THREE.MeshBasicMaterial({ color: 0xffd43b, transparent: true, opacity: 0.72 }),
     );
     arc.position.x = 0.34;
     arc.scale.set(0.95, 1.0, 1.15);
+    const glb = cloneModel('power_fist');
+    if (glb) {
+      grp.add(glb, arc);
+      return grp;
+    }
+    const palm = new THREE.Mesh(
+      new THREE.BoxGeometry(0.36, 0.34, 0.42),
+      new THREE.MeshToonMaterial({ color: 0xff9624, emissive: 0x5c2600 }),
+    );
+    palm.position.x = 0.1;
+    const knuckles = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.26, 0.46),
+      new THREE.MeshToonMaterial({ color: 0xffe57f }),
+    );
+    knuckles.position.x = 0.3;
+    const thumb = new THREE.Mesh(
+      new THREE.BoxGeometry(0.2, 0.14, 0.14),
+      new THREE.MeshToonMaterial({ color: 0xff9624 }),
+    );
+    thumb.position.set(0.12, 0.14, 0.26);
     grp.add(palm, knuckles, thumb, arc);
     return grp;
   }
 
   if (spec.brawlerId === 'mort') {
-    // Real corked alchemist potion flask with glowing liquid inside!
+    const glb = cloneModel('potion_flask');
+    if (glb) {
+      grp.add(glb);
+      grp.scale.setScalar(spec.isSuper ? 1.28 : 1.1);
+      return grp;
+    }
     const glass = new THREE.Mesh(
       getFlaskGlassGeo(),
       new THREE.MeshToonMaterial({
@@ -500,15 +538,9 @@ export function createProjectileVisual(spec: ProjectileVisualSpec): THREE.Group 
     return grp;
   }
 
-  // Lumi: 3D extruded music note + glowing curved acoustic wave arc
+  // Lumi: Blender 3D music note + curved acoustic wave crescent
   const noteColor = spec.isHeal ? 0x4dffaa : spec.team === 'blue' ? 0xff4dc4 : 0xff5a6e;
   const arcColor = spec.isHeal ? 0xb8ffdf : teamTint;
-  const note = new THREE.Mesh(
-    getMusicNoteGeo(),
-    new THREE.MeshToonMaterial({ color: noteColor, emissive: spec.isHeal ? 0x0a6638 : 0x52003a }),
-  );
-  note.scale.setScalar(spec.isSuper ? 1.45 : 1.15);
-
   const wave = new THREE.Mesh(
     getCrescentBladeGeo(),
     new THREE.MeshBasicMaterial({
@@ -519,6 +551,19 @@ export function createProjectileVisual(spec: ProjectileVisualSpec): THREE.Group 
   );
   wave.scale.set(spec.isSuper ? 1.35 : 1.0, 1.0, spec.isSuper ? 1.45 : 1.05);
   wave.position.x = 0.12;
+
+  const glbNote = cloneModel('music_note');
+  if (glbNote) {
+    glbNote.scale.setScalar(spec.isSuper ? 1.45 : 1.15);
+    grp.add(glbNote, wave);
+    return grp;
+  }
+
+  const note = new THREE.Mesh(
+    getMusicNoteGeo(),
+    new THREE.MeshToonMaterial({ color: noteColor, emissive: spec.isHeal ? 0x0a6638 : 0x52003a }),
+  );
+  note.scale.setScalar(spec.isSuper ? 1.45 : 1.15);
   grp.add(note, wave);
   return grp;
 }

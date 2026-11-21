@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { BrawlerId, BRAWLERS, Team } from '@brawl-arena/shared';
+import { cloneModel } from './modelBank';
 
 export interface BrawlerVisual {
   root: THREE.Group;
@@ -7,7 +8,7 @@ export interface BrawlerVisual {
   teamRing: THREE.Mesh;
   superRing: THREE.Mesh;
   shieldDome: THREE.Mesh;
-  materials: THREE.MeshToonMaterial[];
+  materials: THREE.Material[];
   setOpacity: (alpha: number) => void;
 }
 
@@ -30,20 +31,12 @@ export function createBrawlerMesh(
   const bodyGroup = new THREE.Group();
   root.add(bodyGroup);
 
-  const materials: THREE.MeshToonMaterial[] = [];
+  const materials: THREE.Material[] = [];
   const addMat = (c: string | number, em = 0x000000) => {
     const m = makeToonMat(c, em);
     materials.push(m);
     return m;
   };
-
-  const primaryMat = addMat(cfg.primaryColor);
-  const accentMat = addMat(cfg.accentColor);
-  const skinMat = addMat('#ffdbb5');
-  const darkMat = addMat('#1d2233');
-  const steelMat = addMat('#7a8ca8');
-  const woodMat = addMat('#8c5327');
-  const whiteMat = addMat('#ffffff');
 
   // Ground shadow disc
   const shadow = new THREE.Mesh(
@@ -87,6 +80,46 @@ export function createBrawlerMesh(
   shieldDome.position.y = 0.65;
   shieldDome.visible = false;
   root.add(shieldDome);
+
+  // Prefer Blender-modeled GLB character when loaded!
+  const glbModel = cloneModel(brawlerId, true);
+  if (glbModel) {
+    glbModel.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        for (const m of mats) {
+          if (m) materials.push(m);
+        }
+      }
+    });
+    bodyGroup.add(glbModel);
+    return {
+      root,
+      bodyGroup,
+      teamRing,
+      superRing,
+      shieldDome,
+      materials,
+      setOpacity(alpha: number) {
+        const transparent = alpha < 0.99;
+        for (const m of materials) {
+          if (m.transparent !== transparent || m.opacity !== alpha) {
+            m.transparent = transparent;
+            m.opacity = alpha;
+            m.needsUpdate = true;
+          }
+        }
+      },
+    };
+  }
+
+  const primaryMat = addMat(cfg.primaryColor);
+  const accentMat = addMat(cfg.accentColor);
+  const skinMat = addMat('#ffdbb5');
+  const darkMat = addMat('#1d2233');
+  const steelMat = addMat('#7a8ca8');
+  const woodMat = addMat('#8c5327');
+  const whiteMat = addMat('#ffffff');
 
   const bulk = brawlerId === 'golem' ? 1.24 : brawlerId === 'vex' ? 0.92 : 1.0;
 
