@@ -48,15 +48,19 @@ function createCheckeredGroundTexture(mapId: MapId): THREE.CanvasTexture {
 
 function createLeafBladeGeo(): THREE.BufferGeometry {
   const shape = new THREE.Shape();
-  shape.moveTo(0, 0);
-  shape.quadraticCurveTo(0.24, 0.28, 0.04, 0.85);
-  shape.quadraticCurveTo(-0.2, 0.34, 0, 0);
+  shape.moveTo(-0.18, 0);
+  shape.quadraticCurveTo(-0.22, 0.35, 0, 0.72);
+  shape.quadraticCurveTo(0.22, 0.35, 0.18, 0);
+  shape.closePath();
   const geo = new THREE.ExtrudeGeometry(shape, {
-    depth: 0.05,
-    bevelEnabled: false,
+    depth: 0.1,
+    bevelEnabled: true,
+    bevelThickness: 0.03,
+    bevelSize: 0.02,
+    bevelSegments: 1,
   });
   geo.center();
-  geo.translate(0, 0.38, 0);
+  geo.translate(0, 0.32, 0);
   return geo;
 }
 
@@ -233,12 +237,16 @@ export class ArenaRenderer {
     const solidBandMat = new THREE.MeshToonMaterial({ color: '#29354d' });
     const solidCapMat = new THREE.MeshToonMaterial({ color: '#758cb0' });
 
-    // Shared sculpted curved leaf frond geometry for stealth bushes
+    // Shared thick Brawl Stars stealth bush canopy geometries (tile-filling merged thicket)
+    const bushBaseGeo = new THREE.BoxGeometry(1.06, 0.24, 1.06);
+    const bushMoundGeo = new THREE.DodecahedronGeometry(0.42, 0);
+    const bushCrownGeo = new THREE.DodecahedronGeometry(0.35, 0);
     const leafGeo = createLeafBladeGeo();
-    const bushDarkMat = new THREE.MeshToonMaterial({ color: mapId === 'crystal-cavern' ? '#23a65b' : '#188f4c' });
-    const bushLightMat = new THREE.MeshToonMaterial({ color: '#53e084' });
+    const bushShadowMat = new THREE.MeshToonMaterial({ color: mapId === 'crystal-cavern' ? '#14693a' : '#0f5c32' });
+    const bushDarkMat = new THREE.MeshToonMaterial({ color: mapId === 'crystal-cavern' ? '#1fa356' : '#188f4c' });
+    const bushLightMat = new THREE.MeshToonMaterial({ color: mapId === 'crystal-cavern' ? '#49db78' : '#3cd16d' });
     const berryMat = new THREE.MeshBasicMaterial({ color: '#ffd43b' });
-    const berryGeo = new THREE.OctahedronGeometry(0.08, 0);
+    const berryGeo = new THREE.OctahedronGeometry(0.085, 0);
 
     const waterGeo = new THREE.BoxGeometry(1.0, 0.18, 1.0);
     const waterMat = new THREE.MeshToonMaterial({ color: '#26b6ff', emissive: '#083a5c' });
@@ -289,20 +297,57 @@ export class ArenaRenderer {
           this.mapGroup.add(grp);
         } else if (tile === TileType.BUSH) {
           const grp = new THREE.Group();
-          for (let i = 0; i < 5; i++) {
-            const ang = (i / 5) * Math.PI * 2 + (tx * 3 + ty) * 0.4;
-            const leaf = new THREE.Mesh(leafGeo, i % 2 === 0 ? bushLightMat : bushDarkMat);
-            leaf.position.set(Math.cos(ang) * 0.14, 0.04, Math.sin(ang) * 0.14);
-            leaf.rotation.y = -ang;
-            leaf.rotation.x = 0.34;
-            leaf.scale.setScalar(i === 0 ? 1.02 : 0.86);
-            grp.add(leaf);
+          const seed = (tx * 17 + ty * 31) % 10;
+
+          // Dense ground hedge cushion so adjacent bush tiles merge seamlessly
+          const basePad = new THREE.Mesh(bushBaseGeo, bushShadowMat);
+          basePad.position.y = 0.12;
+          basePad.receiveShadow = true;
+          grp.add(basePad);
+
+          // 4 chunky corner/side foliage mounds filling the entire 1x1 tile
+          const moundOffsets: Array<[number, number, number, number]> = [
+            [-0.27, 0.44, -0.25, 1.04],
+            [0.27, 0.42, -0.24, 0.98],
+            [-0.25, 0.45, 0.27, 1.0],
+            [0.26, 0.43, 0.26, 1.05],
+          ];
+          for (let i = 0; i < moundOffsets.length; i++) {
+            const [ox, oy, oz, sc] = moundOffsets[i];
+            const mound = new THREE.Mesh(bushMoundGeo, i % 2 === 0 ? bushDarkMat : bushLightMat);
+            mound.position.set(ox, oy, oz);
+            mound.scale.set(sc * 1.08, sc * 0.88, sc * 1.08);
+            mound.rotation.set(seed * 0.2 + i, seed * 0.5 + i * 1.2, i * 0.3);
+            mound.castShadow = true;
+            mound.receiveShadow = true;
+            grp.add(mound);
           }
-          if ((tx + ty) % 3 === 0) {
+
+          // Tall central sunlit canopy dome (waist-to-shoulder height to hide brawlers!)
+          const crown = new THREE.Mesh(bushCrownGeo, bushLightMat);
+          crown.position.set(((seed % 3) - 1) * 0.06, 0.68, (((seed >> 1) % 3) - 1) * 0.06);
+          crown.scale.set(1.22, 0.95, 1.22);
+          crown.rotation.set(0.3, seed * 0.7, 0.2);
+          crown.castShadow = true;
+          grp.add(crown);
+
+          // Broad chunky leaf tufts poking out of the top crown
+          for (let i = 0; i < 3; i++) {
+            const ang = (i / 3) * Math.PI * 2 + seed * 0.6;
+            const tuft = new THREE.Mesh(leafGeo, i === 0 ? bushLightMat : bushDarkMat);
+            tuft.position.set(Math.cos(ang) * 0.2, 0.64, Math.sin(ang) * 0.2);
+            tuft.rotation.y = -ang;
+            tuft.rotation.x = 0.45;
+            tuft.scale.setScalar(0.72);
+            grp.add(tuft);
+          }
+
+          if ((tx + ty) % 4 === 0) {
             const bud = new THREE.Mesh(berryGeo, berryMat);
-            bud.position.set(0.12, 0.62, -0.08);
+            bud.position.set(0.18, 0.96, -0.12);
             grp.add(bud);
           }
+
           grp.position.set(cx, 0, cz);
           this.mapGroup.add(grp);
           this.bushMeshes.push(grp);
@@ -474,7 +519,7 @@ export class ArenaRenderer {
 
     // Animate bushes, water, and center gem mine crystal cluster
     for (let i = 0; i < this.bushMeshes.length; i++) {
-      this.bushMeshes[i].rotation.z = Math.sin(this.clock * 2.2 + i * 0.7) * 0.05;
+      this.bushMeshes[i].rotation.z = Math.sin(this.clock * 2.0 + i * 0.7) * 0.022;
     }
     for (let i = 0; i < this.waterMeshes.length; i++) {
       this.waterMeshes[i].position.y = -0.03 + Math.sin(this.clock * 2.6 + i * 0.4) * 0.025;
