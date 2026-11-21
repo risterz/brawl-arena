@@ -12,6 +12,12 @@ import {
   TileType,
 } from '@brawl-arena/shared';
 import { BrawlerVisual, createBrawlerMesh } from './brawlerMeshes';
+import {
+  buildAnimatedPreviewStage,
+  buildMatchSurround,
+  MatchSurroundHandle,
+  PreviewStageHandle,
+} from './cartoonBackdrop';
 import { cloneModel, createInstancedGlbBatch, hasModel } from './modelBank';
 import {
   CAMERA_FOV,
@@ -86,6 +92,8 @@ export class ArenaRenderer {
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private previewVisual: BrawlerVisual | null = null;
   private previewBrawlerId: BrawlerId | null = null;
+  private previewStage: PreviewStageHandle | null = null;
+  private matchSurround: MatchSurroundHandle | null = null;
   private mode: 'preview' | 'match' = 'preview';
   private shakeTimer = 0;
   private shakeIntensity = 0;
@@ -131,25 +139,13 @@ export class ArenaRenderer {
   }
 
   private buildPreviewPedestal(): void {
-    const base = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.55, 1.85, 0.45, 24),
-      new THREE.MeshToonMaterial({ color: 0x264b8d }),
-    );
-    base.position.y = -0.22;
-    base.receiveShadow = true;
-    this.previewGroup.add(base);
-
-    const rim = new THREE.Mesh(
-      new THREE.TorusGeometry(1.58, 0.08, 10, 32),
-      new THREE.MeshBasicMaterial({ color: 0xffd43b }),
-    );
-    rim.rotation.x = Math.PI / 2;
-    rim.position.y = 0.02;
-    this.previewGroup.add(rim);
+    this.previewStage = buildAnimatedPreviewStage();
+    this.previewGroup.add(this.previewStage.group);
   }
 
   public setPreviewBrawler(brawlerId: BrawlerId): void {
     this.mode = 'preview';
+    this.scene.background = new THREE.Color('#2894ff');
     this.mapGroup.visible = false;
     this.previewGroup.visible = true;
     this.vfx.clear();
@@ -179,6 +175,7 @@ export class ArenaRenderer {
 
   public renderPreview(dt: number): void {
     this.clock += dt;
+    this.previewStage?.update(this.clock, dt);
     if (this.previewVisual) {
       this.previewVisual.root.rotation.y = this.clock * 0.85;
       this.previewVisual.updateAnimation(dt, false, false);
@@ -187,13 +184,14 @@ export class ArenaRenderer {
         : Math.sin(this.clock * 3.2) * 0.07;
       this.previewVisual.superRing.rotation.z = this.clock * 1.4;
     }
-    this.camera.position.set(0, 2.8, 6.2);
-    this.camera.lookAt(0, 0.9, 0);
+    this.camera.position.set(0, 2.65, 6.4);
+    this.camera.lookAt(0, 0.95, 0);
     this.renderer.render(this.scene, this.camera);
   }
 
   public loadMap(mapId: MapId, grid: Uint8Array): void {
     this.mode = 'match';
+    this.scene.background = new THREE.Color(mapId === 'crystal-cavern' ? '#9e5332' : '#1b8fd1');
     this.cameraSnapped = false;
     this.previewGroup.visible = false;
     this.mapGroup.visible = true;
@@ -206,6 +204,7 @@ export class ArenaRenderer {
     this.bushMeshes = [];
     this.waterMeshes = [];
     this.mineCrystal = null;
+    this.matchSurround = null;
 
     for (const entry of this.brawlers.values()) {
       this.scene.remove(entry.visual.root);
@@ -221,14 +220,9 @@ export class ArenaRenderer {
     floor.receiveShadow = true;
     this.mapGroup.add(floor);
 
-    // Outer surround floor
-    const surround = new THREE.Mesh(
-      new THREE.PlaneGeometry(MAP_WIDTH + 34, MAP_HEIGHT + 34),
-      new THREE.MeshBasicMaterial({ color: mapId === 'crystal-cavern' ? '#121d38' : '#0f2c42' }),
-    );
-    surround.rotation.x = -Math.PI / 2;
-    surround.position.set(MAP_WIDTH / 2, -0.05, MAP_HEIGHT / 2);
-    this.mapGroup.add(surround);
+    // Rich animated cartoon outer canyon/river surround outside arena walls
+    this.matchSurround = buildMatchSurround(mapId);
+    this.mapGroup.add(this.matchSurround.group);
 
     // Subtle soft contact-shadow pad under breakable crates
     const propShadowGeo = new THREE.PlaneGeometry(1.12, 1.12);
@@ -587,7 +581,8 @@ export class ArenaRenderer {
       entry.visual.setOpacity(inBush && b.team === viewerTeam ? 0.56 : 1.0);
     }
 
-    // Animate bushes, water, and center gem mine crystal cluster
+    // Animate bushes, water, outer cartoon surround, and center gem mine crystal cluster
+    this.matchSurround?.update(this.clock, dt);
     for (let i = 0; i < this.bushMeshes.length; i++) {
       this.bushMeshes[i].rotation.z = Math.sin(this.clock * 2.0 + i * 0.7) * 0.022;
     }
