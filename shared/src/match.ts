@@ -395,15 +395,18 @@ export class MatchEngine {
         b.facing = Math.atan2(my, mx);
       }
 
-      // Handle Super or Primary fire
-      if (inp.superFire && b.superCharge >= 100 && !b.burst) {
-        b.superCharge = 0;
-        b.attackCooldown = cfg.attackCooldown;
-        const aim = inp.autoAim
-          ? findAutoAimAngle(this.state, b, cfg.superAttack.range) ?? inp.aimAngle
-          : inp.aimAngle;
-        triggerAttack(this.state, b, aim, true, events, this.callbacks);
+      // Handle Super or Primary fire (Super input never falls through into primary ammo)
+      if (inp.superFire) {
+        if (b.superCharge >= 100 && !b.burst) {
+          b.superCharge = 0;
+          b.attackCooldown = cfg.attackCooldown;
+          const aim = inp.autoAim
+            ? findAutoAimAngle(this.state, b, cfg.superAttack.range) ?? inp.aimAngle
+            : inp.aimAngle;
+          triggerAttack(this.state, b, aim, true, events, this.callbacks);
+        }
         inp.superFire = false;
+        inp.autoAim = false;
       } else if ((inp.fire || inp.autoAim) && b.ammo >= 1.0 && b.attackCooldown <= 0 && !b.burst) {
         const autoAngle = inp.autoAim
           ? findAutoAimAngle(this.state, b, cfg.attack.range)
@@ -412,7 +415,6 @@ export class MatchEngine {
         b.ammo -= 1.0;
         b.attackCooldown = cfg.attackCooldown;
         triggerAttack(this.state, b, aim, false, events, this.callbacks);
-        inp.fire = false;
         inp.autoAim = false;
       }
     }

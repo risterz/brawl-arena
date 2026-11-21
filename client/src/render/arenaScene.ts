@@ -12,7 +12,11 @@ import {
   TileType,
 } from '@brawl-arena/shared';
 import { BrawlerVisual, createBrawlerMesh } from './brawlerMeshes';
-import { CAMERA_FOV, worldPosToCameraTarget } from './perspective';
+import {
+  CAMERA_FOV,
+  shouldRenderEventVfx,
+  stepCameraFollow,
+} from './perspective';
 import { AimTelegraphInput, VfxManager } from './vfx';
 
 function createCheckeredGroundTexture(mapId: MapId): THREE.CanvasTexture {
@@ -65,6 +69,7 @@ export class ArenaRenderer {
   private clock = 0;
   private camPos = new THREE.Vector3(10.5, 18.5, 32);
   private camLook = new THREE.Vector3(10.5, 0, 18);
+  private cameraSnapped = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -161,6 +166,7 @@ export class ArenaRenderer {
 
   public loadMap(mapId: MapId, grid: Uint8Array): void {
     this.mode = 'match';
+    this.cameraSnapped = false;
     this.previewGroup.visible = false;
     this.mapGroup.visible = true;
     this.vfx.clear();
@@ -302,8 +308,10 @@ export class ArenaRenderer {
     }
   }
 
-  public applyEvents(events: MatchEvent[]): void {
+  public applyEvents(events: MatchEvent[], state: MatchState | null = null, localSlot = 0): void {
+    const viewerTeam: Team = state?.brawlers[localSlot]?.team ?? 'blue';
     for (const ev of events) {
+      if (!shouldRenderEventVfx(ev, state, viewerTeam)) continue;
       if (ev.type === 'wall_break') {
         for (const t of ev.tiles) {
           this.removeWall(t.tx, t.ty, true);
@@ -407,16 +415,26 @@ export class ArenaRenderer {
     this.vfx.updateTelegraph(telegraph);
     this.vfx.sync(state, dt);
 
-    // Smooth camera follow with team perspective flip
+    // Smooth camera follow with immediate snap on match start (no Red-side sweep)
     const targetX = localBrawler ? localBrawler.x : MAP_WIDTH / 2;
     const targetY = localBrawler ? localBrawler.y : MAP_HEIGHT / 2;
-    const targetCam = worldPosToCameraTarget(targetX, targetY, viewerTeam);
-    const lerpAlpha = Math.min(1, dt * 8.5);
-    this.camPos.x += (targetCam.camX - this.camPos.x) * lerpAlpha;
-    this.camPos.y += (targetCam.camY - this.camPos.y) * lerpAlpha;
-    this.camPos.z += (targetCam.camZ - this.camPos.z) * lerpAlpha;
-    this.camLook.x += (targetCam.lookX - this.camLook.x) * lerpAlpha;
-    this.camLook.z += (targetCam.lookZ - this.camLook.z) * lerpAlpha;
+    const nextCam = stepCameraFollow(
+      {
+        camX: this.camPos.x,
+        camY: this.camPos.y,
+        camZ: this.camPos.z,
+        lookX: this.camLook.x,
+        lookZ: this.camLook.z,
+      },
+      targetX,
+      targetY,
+      viewerTeam,
+      dt,
+      this.cameraSnapped,
+    );
+    this.cameraSnapped = true;
+    this.camPos.set(nextCam.camX, nextCam.camY, nextCam.camZ);
+    this.camLook.set(nextCam.lookX, 0, nextCam.lookZ);
 
     let sx = 0;
     let sz = 0;

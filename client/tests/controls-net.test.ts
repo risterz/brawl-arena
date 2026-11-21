@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { InputThrottle } from '../src/input/controls';
+import { InputThrottle, detectCoarseTouchPointer } from '../src/input/controls';
 import { LocalMatchController } from '../src/net/localController';
 
 describe('Input throttling and Local Solo controller', () => {
@@ -45,5 +45,10 @@ describe('Input throttling and Local Solo controller', () => {
       autoAim: false,
     });
     expect(local.getState().elapsed).toBeCloseTo(0.05, 5);
+  });
+
+  it('I1: keeps desktop touchscreen laptops with fine pointer out of touch-only mode', () => {
+    expect(detectCoarseTouchPointer({ coarsePointer: false, anyFinePointer: true, maxTouchPoints: 10 })).toBe(false);
+    expect(detectCoarseTouchPointer({ coarsePointer: true, anyFinePointer: false, maxTouchPoints: 5 })).toBe(true);
   });
 });

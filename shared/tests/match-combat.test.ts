@@ -164,4 +164,26 @@ describe('Gem Grab rules, combat, stealth, and protocol', () => {
     expect(snap.brawlers).toHaveLength(6);
     expect(snap.mapId).toBe('crystal-cavern');
   });
+
+  it('I4: never spends primary ammo or breaks bush stealth when superFire + autoAim triggers with superCharge < 100', () => {
+    const engine = new MatchEngine({ mapId: 'crystal-cavern', slots: defaultSixSlots() });
+    const buck = engine.state.brawlers[0];
+    buck.superCharge = 45;
+    buck.ammo = 3;
+    buck.revealedTimer = 0;
+
+    engine.setInput(0, {
+      moveX: 0,
+      moveY: 0,
+      aimAngle: -Math.PI / 2,
+      fire: false,
+      superFire: true,
+      autoAim: true,
+    });
+    engine.step(0.05);
+
+    expect(buck.ammo).toBe(3);
+    expect(buck.revealedTimer).toBe(0);
+    expect(engine.state.projectiles).toHaveLength(0);
+  });
 });

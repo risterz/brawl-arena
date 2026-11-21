@@ -81,6 +81,7 @@ export function inputsDiffer(a: CompactInput | null, b: CompactInput): boolean {
 
 export interface MatchSnapshot {
   tick: number;
+  hostSlot?: number;
   mapId: MapId;
   phase: MatchPhase;
   elapsed: number;

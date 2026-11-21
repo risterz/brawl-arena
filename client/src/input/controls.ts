@@ -10,6 +10,17 @@ import {
 import { screenAimToWorldAngle, screenDirToWorldDir } from '../render/perspective';
 import { AimTelegraphInput } from '../render/vfx';
 
+export interface PointerCapabilities {
+  coarsePointer: boolean;
+  anyFinePointer: boolean;
+  maxTouchPoints: number;
+}
+
+export function detectCoarseTouchPointer(caps: PointerCapabilities): boolean {
+  if (caps.coarsePointer) return true;
+  return caps.maxTouchPoints > 0 && !caps.anyFinePointer;
+}
+
 export class InputThrottle {
   private lastSent: CompactInput | null = null;
   private lastSentMs = -Infinity;
@@ -120,10 +131,15 @@ export class ControlManager {
   }
 
   private detectTouch(): void {
-    this.isTouch =
-      'ontouchstart' in window ||
-      navigator.maxTouchPoints > 0 ||
-      (typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches);
+    const coarsePointer =
+      typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+    const anyFinePointer =
+      typeof window.matchMedia === 'function' && window.matchMedia('(any-pointer: fine)').matches;
+    this.isTouch = detectCoarseTouchPointer({
+      coarsePointer,
+      anyFinePointer,
+      maxTouchPoints: navigator.maxTouchPoints || 0,
+    });
   }
 
   private buildTouchDom(): void {
@@ -163,6 +179,20 @@ export class ControlManager {
       this.keys.clear();
       this.mouseDownLeft = false;
       this.mouseDownRight = false;
+    });
+
+    window.addEventListener('pointerdown', (e) => {
+      const anyFine =
+        typeof window.matchMedia === 'function' && window.matchMedia('(any-pointer: fine)').matches;
+      if (e.pointerType === 'mouse' && anyFine && this.isTouch) {
+        this.isTouch = false;
+        this.syncTouchVisibility();
+        this.updateOrientationGate();
+      } else if (e.pointerType === 'touch' && !this.isTouch) {
+        this.isTouch = true;
+        this.syncTouchVisibility();
+        this.updateOrientationGate();
+      }
     });
 
     window.addEventListener('mousemove', (e) => {

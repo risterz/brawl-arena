@@ -29,6 +29,7 @@ function boot(): void {
   let selectedMap: MapId = 'crystal-cavern';
   let localMatch: LocalMatchController | null = null;
   let resultsShown = false;
+  let lastResultsHostSlot = -2;
 
   const hud = new MatchHud(hudLayer, {
     onToggleMute: () => {
@@ -74,7 +75,7 @@ function boot(): void {
       controls.setActive(true);
     },
     onEvents: (events) => {
-      renderer.applyEvents(events);
+      renderer.applyEvents(events, online.getState(), online.getMySlot());
       for (const ev of events) sfx.playEvent(ev);
     },
     onError: (message) => {
@@ -166,10 +167,13 @@ function boot(): void {
   }
 
   function maybeShowResults(state: MatchState, localSlot: number, isOnline: boolean): void {
-    if (state.phase !== 'ended' || resultsShown) return;
-    resultsShown = true;
-    controls.setActive(false);
+    if (state.phase !== 'ended') return;
     const lobby = online.getLobby();
+    const curHostSlot = lobby ? lobby.hostSlot : -1;
+    if (resultsShown && (!isOnline || lastResultsHostSlot === curHostSlot)) return;
+    resultsShown = true;
+    lastResultsHostSlot = curHostSlot;
+    controls.setActive(false);
     const isHost = Boolean(lobby && lobby.hostSlot === online.getMySlot());
     screens.renderResults({
       state,
@@ -213,7 +217,7 @@ function boot(): void {
         (x, y) => renderer.screenToWorldGround(x, y),
       );
       const events = localMatch.tick(dt, input);
-      renderer.applyEvents(events);
+      renderer.applyEvents(events, state, localMatch.localSlot);
       for (const ev of events) sfx.playEvent(ev);
       renderer.syncState(state, localMatch.localSlot, dt, telegraph);
       hud.update(state, localMatch.localSlot, (wx, wy, h) => renderer.projectToScreen(wx, wy, h));

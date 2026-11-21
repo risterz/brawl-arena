@@ -118,4 +118,66 @@ describe('Room codes and RoomDurableObject lifecycle', () => {
     expect(lobby.slots[3].team).toBe('red');
     expect(lobby.slots[3].brawlerId).toBe('mort');
   });
+
+  it('C1: transfers host and broadcasts lobby when hibernated host disconnects before any message', () => {
+    const room = new RoomManager('K7MP');
+    const wsHost = new MockSocket();
+    const wsGuest = new MockSocket();
+    room.restoreHibernatedSocket(wsHost, {
+      token: 'tok-host',
+      name: 'Host',
+      slotIndex: 0,
+      brawlerId: 'buck',
+      isHost: true,
+    });
+    room.restoreHibernatedSocket(wsGuest, {
+      token: 'tok-guest',
+      name: 'Guest',
+      slotIndex: 1,
+      brawlerId: 'vex',
+      isHost: false,
+    });
+
+    // Simulate DO webSocketClose where closing socket may already be missing from getWebSockets()
+    room.handleHibernatedDisconnect(wsHost, 'tok-host');
+    expect(room.getLobby().hostSlot).toBe(1);
+    expect(wsGuest.sentMessages.at(-1)).toContain('"hostSlot":1');
+  });
+
+  it('C2: latches fire/super pulses within a tick and sustains held fire without client resend', () => {
+    const room = new RoomManager('K7MP');
+    const ws = new MockSocket();
+    room.handleConnect(ws, 'tok-1', 'Alpha');
+    room.handleMessage(ws, JSON.stringify({ type: 'start_match' }));
+
+    // Pulse fire then release BEFORE the 50ms tick fires -> shot must NOT be dropped
+    room.handleMessage(ws, JSON.stringify({ type: 'input', input: { md: -1, aa: 54, fl: 1 } }));
+    room.handleMessage(ws, JSON.stringify({ type: 'input', input: { md: -1, aa: 54, fl: 0 } }));
+    room.stepSimulation(0.05);
+    expect(room.getMatchState()!.brawlers[0].ammo).toBeLessThan(2.5);
+
+    // Hold fire continuously (fl: 1 sent once, no resends) -> must fire a second shot after cooldown
+    const ammoAfterFirst = room.getMatchState()!.brawlers[0].ammo;
+    room.handleMessage(ws, JSON.stringify({ type: 'input', input: { md: -1, aa: 54, fl: 1 } }));
+    for (let i = 0; i < 10; i++) room.stepSimulation(0.05);
+    expect(room.getMatchState()!.brawlers[0].ammo).toBeLessThan(ammoAfterFirst - 0.3);
+  });
+
+  it('I5: transfers host when host disconnects after match end so guest can return to lobby', () => {
+    const room = new RoomManager('K7MP');
+    const wsHost = new MockSocket();
+    const wsGuest = new MockSocket();
+    room.handleConnect(wsHost, 'tok-1', 'Host');
+    room.handleConnect(wsGuest, 'tok-2', 'Guest');
+    room.handleMessage(wsHost, JSON.stringify({ type: 'start_match' }));
+
+    // Force match end and disconnect host
+    room.getMatchState()!.phase = 'ended';
+    room.handleDisconnect(wsHost);
+
+    expect(room.getLobby().hostSlot).toBe(1);
+    room.handleMessage(wsGuest, JSON.stringify({ type: 'return_lobby' }));
+    expect(room.isMatchRunning()).toBe(false);
+    expect(room.getMatchState()).toBeNull();
+  });
 });

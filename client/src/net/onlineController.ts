@@ -237,6 +237,9 @@ export class OnlineMatchController {
   }
 
   private applySnapshotMetadata(snap: MatchSnapshot): void {
+    if (typeof snap.hostSlot === 'number' && this.lobby) {
+      this.lobby.hostSlot = snap.hostSlot;
+    }
     if (!this.state) {
       this.state = this.buildStateFromSnapshot(snap);
       return;

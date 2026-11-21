@@ -68,6 +68,15 @@ export class RoomManager {
   private brokenWalls: Array<{ tx: number; ty: number }> = [];
   private ticker: ReturnType<typeof setInterval> | null = null;
   private onActivityChange?: (active: boolean) => void;
+  private latchedInputs: Map<
+    number,
+    {
+      base: ReturnType<typeof dequantizeInput>;
+      firePulse: boolean;
+      superPulse: boolean;
+      autoAimPulse: boolean;
+    }
+  > = new Map();
 
   constructor(code: string, onActivityChange?: (active: boolean) => void) {
     this.code = code;
@@ -322,10 +331,20 @@ export class RoomManager {
     slot.connected = false;
 
     if (this.engine !== null) {
-      // Mid-match disconnect: 3.0s grace period before bot takeover
+      // Mid-match or post-match disconnect: transfer host immediately so remaining players are never stranded
+      if (this.hostSlot === slotIdx) {
+        const nextHuman = this.slots.find((s) => !s.isBot && s.connected);
+        if (nextHuman) {
+          this.hostSlot = nextHuman.slotIndex;
+        }
+      }
       slot.disconnectTimer = DISCONNECT_BOT_GRACE_SECONDS;
       if (!this.isMatchRunning()) {
         this.stopTicker();
+        // Broadcast updated hostSlot on final snapshot so Results UI updates immediately
+        const finalSnap = serializeSnapshot(this.engine.state, [], this.tickCount, this.brokenWalls);
+        finalSnap.hostSlot = this.hostSlot;
+        this.broadcast({ type: 'snapshot', snapshot: finalSnap });
       }
       if (this.countConnectedHumans() === 0) {
         this.onActivityChange?.(false);
@@ -351,6 +370,31 @@ export class RoomManager {
     }
   }
 
+  public handleHibernatedDisconnect(ws: SocketLike, token?: string): void {
+    if (this.socketToSlot.has(ws)) {
+      this.handleDisconnect(ws);
+      return;
+    }
+    if (token) {
+      const slot = this.slots.find((s) => s.token === token);
+      if (slot && slot.socket) {
+        this.handleDisconnect(slot.socket);
+        return;
+      }
+    }
+    // Closing socket was already excluded from ctx.getWebSockets(): ensure host is valid and broadcast lobby
+    if (this.engine === null) {
+      if (this.hostSlot === -1 || this.slots[this.hostSlot]?.isBot || !this.slots[this.hostSlot]?.connected) {
+        const nextHuman = this.slots.find((s) => !s.isBot && s.connected);
+        this.hostSlot = nextHuman ? nextHuman.slotIndex : -1;
+      }
+      this.broadcast({ type: 'lobby', lobby: this.getLobby() });
+      if (this.countConnectedHumans() === 0) {
+        this.onActivityChange?.(false);
+      }
+    }
+  }
+
   public handleMessage(ws: SocketLike, rawData: string): void {
     const slotIdx = this.socketToSlot.get(ws);
     if (slotIdx === undefined) return;
@@ -371,7 +415,14 @@ export class RoomManager {
 
     if (msg.type === 'input') {
       if (this.engine && this.isMatchRunning()) {
-        this.engine.setInput(slotIdx, dequantizeInput(msg.input));
+        const decoded = dequantizeInput(msg.input);
+        const prev = this.latchedInputs.get(slotIdx);
+        this.latchedInputs.set(slotIdx, {
+          base: decoded,
+          firePulse: (prev?.firePulse ?? false) || decoded.fire,
+          superPulse: (prev?.superPulse ?? false) || decoded.superFire,
+          autoAimPulse: (prev?.autoAimPulse ?? false) || decoded.autoAim,
+        });
       }
       return;
     }
@@ -484,8 +535,10 @@ export class RoomManager {
     this.botAi = new BotController();
     this.tickCount = 0;
     this.brokenWalls = [];
+    this.latchedInputs.clear();
 
     const initialSnap = serializeSnapshot(this.engine.state, [], 0, []);
+    initialSnap.hostSlot = this.hostSlot;
     for (const s of this.slots) {
       if (s.socket && s.connected) {
         this.sendTo(s.socket, {
@@ -542,6 +595,21 @@ export class RoomManager {
       }
     }
 
+    // Apply latched human inputs so short pulses never drop between 50ms ticks
+    for (const [slotIdx, latched] of this.latchedInputs) {
+      const brawler = this.engine.state.brawlers[slotIdx];
+      if (!brawler || brawler.isBot) continue;
+      this.engine.setInput(slotIdx, {
+        ...latched.base,
+        fire: latched.base.fire || latched.firePulse,
+        superFire: latched.base.superFire || latched.superPulse,
+        autoAim: latched.base.autoAim || latched.autoAimPulse,
+      });
+      latched.firePulse = false;
+      latched.superPulse = false;
+      latched.autoAimPulse = false;
+    }
+
     const botInputs = this.botAi.computeInputs(this.engine.state, dt);
     for (const [slotIdx, inp] of botInputs) {
       this.engine.setInput(slotIdx, inp);
@@ -556,6 +624,7 @@ export class RoomManager {
     }
 
     const snap = serializeSnapshot(this.engine.state, events, this.tickCount, this.brokenWalls);
+    snap.hostSlot = this.hostSlot;
     this.broadcast({ type: 'snapshot', snapshot: snap });
 
     if (this.engine.state.phase === 'ended') {
@@ -673,11 +742,15 @@ export class RoomDurableObject {
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {
-    this.manager?.handleDisconnect(ws);
+    const meta = (ws.deserializeAttachment() as Partial<HibernatedSocketMeta> | null) ?? {};
+    const mgr = this.getManager(meta.code ?? 'ROOM');
+    mgr.handleHibernatedDisconnect(ws, meta.token);
   }
 
   async webSocketError(ws: WebSocket): Promise<void> {
-    this.manager?.handleDisconnect(ws);
+    const meta = (ws.deserializeAttachment() as Partial<HibernatedSocketMeta> | null) ?? {};
+    const mgr = this.getManager(meta.code ?? 'ROOM');
+    mgr.handleHibernatedDisconnect(ws, meta.token);
   }
 
   async alarm(): Promise<void> {
