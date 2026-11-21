@@ -85,8 +85,9 @@ describe('Room codes and RoomDurableObject lifecycle', () => {
     room.handleConnect(ws2, 'tok-2', 'Guest');
     expect(room.getLobby().hostSlot).toBe(0);
 
+    const guestSlot = room.getLobby().slots.find((s) => s.name === 'Guest')!.slotIndex;
     room.handleDisconnect(ws1);
-    expect(room.getLobby().hostSlot).toBe(1);
+    expect(room.getLobby().hostSlot).toBe(guestSlot);
   });
 
   it('preserves original host slot, team, and brawler when restoring hibernated sockets in arbitrary order', () => {
@@ -172,12 +173,94 @@ describe('Room codes and RoomDurableObject lifecycle', () => {
     room.handleMessage(wsHost, JSON.stringify({ type: 'start_match' }));
 
     // Force match end and disconnect host
+    const guestSlot = room.getLobby().slots.find((s) => s.name === 'Guest')!.slotIndex;
     room.getMatchState()!.phase = 'ended';
     room.handleDisconnect(wsHost);
 
-    expect(room.getLobby().hostSlot).toBe(1);
+    expect(room.getLobby().hostSlot).toBe(guestSlot);
     room.handleMessage(wsGuest, JSON.stringify({ type: 'return_lobby' }));
     expect(room.isMatchRunning()).toBe(false);
     expect(room.getMatchState()).toBeNull();
+  });
+
+  it('supports Custom 1v1 PvP (players only) with dense slot mapping and clean return to lobby', () => {
+    const room = new RoomManager('C1V1');
+    const ws1 = new MockSocket();
+    const ws2 = new MockSocket();
+    room.handleConnect(ws1, 't1', 'Alice');
+    room.handleMessage(ws1, JSON.stringify({ type: 'set_team_sizes', blueSize: 1, redSize: 1 }));
+    room.handleMessage(ws1, JSON.stringify({ type: 'set_fill_bots', fillBots: false }));
+
+    // Cannot start players-only 1v1 while Red has 0 humans
+    room.handleMessage(ws1, JSON.stringify({ type: 'start_match' }));
+    expect(room.isMatchRunning()).toBe(false);
+    expect(ws1.sentMessages.at(-1)).toContain('Need at least 1 player on both Blue and Red');
+
+    // Second player auto-balances onto Red enabled slot (slot 3)
+    room.handleConnect(ws2, 't2', 'Bob');
+    const lobby = room.getLobby();
+    expect(lobby.blueSize).toBe(1);
+    expect(lobby.redSize).toBe(1);
+    expect(lobby.slots[0].name).toBe('Alice');
+    expect(lobby.slots[3].name).toBe('Bob');
+
+    // 3rd joiner rejected as 2/2 room full
+    const ws3 = new MockSocket();
+    room.handleConnect(ws3, 't3', 'Extra');
+    expect(ws3.closed).toBe(true);
+    expect(ws3.sentMessages.at(-1)).toContain('Room is full (2/2 players)');
+
+    room.handleMessage(ws1, JSON.stringify({ type: 'start_match' }));
+    expect(room.isMatchRunning()).toBe(true);
+    const state = room.getMatchState()!;
+    expect(state.brawlers).toHaveLength(2);
+    expect(state.brawlers[0].team).toBe('blue');
+    expect(state.brawlers[0].name).toBe('Alice');
+    expect(state.brawlers[1].team).toBe('red');
+    expect(state.brawlers[1].name).toBe('Bob');
+    expect(state.brawlers.every((b) => !b.isBot)).toBe(true);
+
+    // Bob (lobby slot 3 -> match slot 1) fires cleanly via dense mapping
+    room.handleMessage(ws2, JSON.stringify({ type: 'input', input: { md: -1, aa: 18, fl: 1 } }));
+    room.stepSimulation(0.05);
+    expect(room.getMatchState()!.brawlers[1].ammo).toBeLessThan(2.5);
+
+    // Return to lobby restores Bob's lobby slotIndex (3) cleanly
+    room.handleMessage(ws1, JSON.stringify({ type: 'return_lobby' }));
+    expect(room.isMatchRunning()).toBe(false);
+    expect(ws2.sentMessages.some((m) => m.includes('"type":"welcome"') && m.includes('"slotIndex":3'))).toBe(true);
+  });
+
+  it('supports Custom 1v2 PvP and 2v2 with bots', () => {
+    // 1v2 pure PvP (1 Blue vs 2 Red humans)
+    const room1v2 = new RoomManager('C1V2');
+    const p1 = new MockSocket();
+    const p2 = new MockSocket();
+    const p3 = new MockSocket();
+    room1v2.handleConnect(p1, 'u1', 'SoloBoss');
+    room1v2.handleMessage(p1, JSON.stringify({ type: 'set_team_sizes', blueSize: 1, redSize: 2 }));
+    room1v2.handleMessage(p1, JSON.stringify({ type: 'set_fill_bots', fillBots: false }));
+    room1v2.handleConnect(p2, 'u2', 'HunterA');
+    room1v2.handleConnect(p3, 'u3', 'HunterB');
+    room1v2.handleMessage(p1, JSON.stringify({ type: 'start_match' }));
+
+    const st1v2 = room1v2.getMatchState()!;
+    expect(st1v2.brawlers).toHaveLength(3);
+    expect(st1v2.brawlers.filter((b) => b.team === 'blue')).toHaveLength(1);
+    expect(st1v2.brawlers.filter((b) => b.team === 'red')).toHaveLength(2);
+    expect(st1v2.brawlers.every((b) => !b.isBot)).toBe(true);
+
+    // 2v2 with Fill Bots ON (1 human + 3 bots = 4 brawlers)
+    const room2v2 = new RoomManager('C2V2');
+    const host = new MockSocket();
+    room2v2.handleConnect(host, 'h1', 'DuoHost');
+    room2v2.handleMessage(host, JSON.stringify({ type: 'set_team_sizes', blueSize: 2, redSize: 2 }));
+    room2v2.handleMessage(host, JSON.stringify({ type: 'set_fill_bots', fillBots: true }));
+    room2v2.handleMessage(host, JSON.stringify({ type: 'start_match' }));
+
+    const st2v2 = room2v2.getMatchState()!;
+    expect(st2v2.brawlers).toHaveLength(4);
+    expect(st2v2.brawlers.filter((b) => b.team === 'blue')).toHaveLength(2);
+    expect(st2v2.brawlers.filter((b) => b.team === 'red')).toHaveLength(2);
   });
 });

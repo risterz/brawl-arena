@@ -197,6 +197,14 @@ export class OnlineMatchController {
     this.send({ type: 'pick_mode', mode });
   }
 
+  public setTeamSizes(blueSize: number, redSize: number): void {
+    this.send({ type: 'set_team_sizes', blueSize, redSize });
+  }
+
+  public setFillBots(fillBots: boolean): void {
+    this.send({ type: 'set_fill_bots', fillBots });
+  }
+
   public startMatch(): void {
     this.send({ type: 'start_match' });
   }

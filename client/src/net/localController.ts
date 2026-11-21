@@ -15,6 +15,8 @@ import {
 export interface LocalMatchOptions {
   mapId: MapId;
   mode?: GameMode;
+  blueSize?: number;
+  redSize?: number;
   playerBrawler: BrawlerId;
   playerName: string;
 }
@@ -25,6 +27,8 @@ export class LocalMatchController {
   public readonly localSlot = 0;
 
   constructor(opts: LocalMatchOptions) {
+    const blueSize = Math.max(1, Math.min(3, Math.floor(opts.blueSize ?? 3)));
+    const redSize = Math.max(1, Math.min(3, Math.floor(opts.redSize ?? 3)));
     const others = BRAWLER_LIST.filter((b) => b.id !== opts.playerBrawler);
     const slots: SlotSetup[] = [
       {
@@ -34,42 +38,28 @@ export class LocalMatchController {
         isBot: false,
         brawlerId: opts.playerBrawler,
       },
-      {
-        slotIndex: 1,
-        team: 'blue',
-        name: `Bot ${others[0].name}`,
-        isBot: true,
-        brawlerId: others[0].id,
-      },
-      {
-        slotIndex: 2,
-        team: 'blue',
-        name: `Bot ${others[1].name}`,
-        isBot: true,
-        brawlerId: others[1].id,
-      },
-      {
-        slotIndex: 3,
-        team: 'red',
-        name: `Bot ${others[2].name}`,
-        isBot: true,
-        brawlerId: others[2].id,
-      },
-      {
-        slotIndex: 4,
-        team: 'red',
-        name: `Bot ${others[3].name}`,
-        isBot: true,
-        brawlerId: others[3].id,
-      },
-      {
-        slotIndex: 5,
-        team: 'red',
-        name: `Bot ${others[4].name}`,
-        isBot: true,
-        brawlerId: others[4].id,
-      },
     ];
+    let botCursor = 0;
+    for (let i = 1; i < blueSize; i++) {
+      const pick = others[botCursor++ % others.length];
+      slots.push({
+        slotIndex: slots.length,
+        team: 'blue',
+        name: `Bot ${pick.name}`,
+        isBot: true,
+        brawlerId: pick.id,
+      });
+    }
+    for (let i = 0; i < redSize; i++) {
+      const pick = others[botCursor++ % others.length];
+      slots.push({
+        slotIndex: slots.length,
+        team: 'red',
+        name: `Bot ${pick.name}`,
+        isBot: true,
+        brawlerId: pick.id,
+      });
+    }
 
     this.engine = new MatchEngine({
       mapId: opts.mapId,

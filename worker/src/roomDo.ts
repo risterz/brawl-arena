@@ -37,6 +37,9 @@ export interface HibernatedSocketMeta {
   isHost: boolean;
   mapId?: MapId;
   mode?: GameMode;
+  blueSize?: number;
+  redSize?: number;
+  fillBots?: boolean;
 }
 
 interface InternalSlot {
@@ -62,9 +65,13 @@ export class RoomManager {
   public readonly code: string;
   private mapId: MapId = 'crystal-cavern';
   private mode: GameMode = 'gem-grab';
+  private blueSize = 3;
+  private redSize = 3;
+  private fillBots = true;
   private hostSlot = -1;
   private slots: InternalSlot[];
   private socketToSlot: Map<SocketLike, number> = new Map();
+  private lobbyToMatchSlot: Map<number, number> = new Map();
   private engine: MatchEngine | null = null;
   private botAi: BotController | null = null;
   private tickCount = 0;
@@ -78,6 +85,7 @@ export class RoomManager {
       firePulse: boolean;
       superPulse: boolean;
       autoAimPulse: boolean;
+      tacklePulse: boolean;
     }
   > = new Map();
 
@@ -116,6 +124,11 @@ export class RoomManager {
     return this.engine ? this.engine.state : null;
   }
 
+  private isSlotEnabled(slotIndex: number): boolean {
+    if (slotIndex < 3) return slotIndex < this.blueSize;
+    return slotIndex - 3 < this.redSize;
+  }
+
   public getLobby(): LobbyState {
     const lobbySlots: LobbySlot[] = this.slots.map((s) => ({
       slotIndex: s.slotIndex,
@@ -125,12 +138,16 @@ export class RoomManager {
       isBot: s.isBot,
       connected: s.connected,
       ready: !s.isBot && s.connected,
+      enabled: this.isSlotEnabled(s.slotIndex),
     }));
     const host = this.hostSlot >= 0 ? this.slots[this.hostSlot] : null;
     return {
       code: this.code,
       mapId: this.mapId,
       mode: this.mode,
+      blueSize: this.blueSize,
+      redSize: this.redSize,
+      fillBots: this.fillBots,
       hostSlot: this.hostSlot,
       hostToken: host?.token ?? undefined,
       inMatch: this.isMatchRunning(),
@@ -172,6 +189,9 @@ export class RoomManager {
           isHost: s.slotIndex === this.hostSlot,
           mapId: this.mapId,
           mode: this.mode,
+          blueSize: this.blueSize,
+          redSize: this.redSize,
+          fillBots: this.fillBots,
         };
         try {
           s.socket.serializeAttachment(meta);
@@ -202,6 +222,15 @@ export class RoomManager {
     }
     if (meta.mode === 'gem-grab' || meta.mode === 'brawl-ball') {
       this.mode = meta.mode;
+    }
+    if (typeof meta.blueSize === 'number' && meta.blueSize >= 1 && meta.blueSize <= 3) {
+      this.blueSize = Math.floor(meta.blueSize);
+    }
+    if (typeof meta.redSize === 'number' && meta.redSize >= 1 && meta.redSize <= 3) {
+      this.redSize = Math.floor(meta.redSize);
+    }
+    if (typeof meta.fillBots === 'boolean') {
+      this.fillBots = meta.fillBots;
     }
     if (meta.isHost || this.hostSlot === -1) {
       this.hostSlot = idx;
@@ -257,12 +286,14 @@ export class RoomManager {
         existing.disconnectTimer = 0;
         this.socketToSlot.set(ws, existing.slotIndex);
 
-        const brawler = this.engine.state.brawlers[existing.slotIndex];
+        const matchIdx = this.lobbyToMatchSlot.get(existing.slotIndex) ?? existing.slotIndex;
+        const brawler = this.engine.state.brawlers[matchIdx];
         if (brawler) {
           brawler.isBot = false;
         }
 
         const snap = serializeSnapshot(this.engine.state, [], this.tickCount, this.brokenWalls);
+        snap.hostSlot = this.lobbyToMatchSlot.get(this.hostSlot) ?? this.hostSlot;
         this.sendTo(ws, {
           type: 'welcome',
           slotIndex: existing.slotIndex,
@@ -274,7 +305,7 @@ export class RoomManager {
           type: 'match_start',
           mapId: this.mapId,
           mode: this.mode,
-          slotIndex: existing.slotIndex,
+          slotIndex: matchIdx,
           team: existing.team,
           snapshot: snap,
         });
@@ -290,12 +321,22 @@ export class RoomManager {
       return;
     }
 
-    // Lobby join or reconnect
+    // Lobby join or reconnect — pick an open ENABLED slot, balancing teams automatically for custom 1v1/2v2/1v2!
     let slot = existing;
     if (!slot) {
-      slot = this.slots.find((s) => s.isBot);
+      const enabledBlueOpen = this.slots.filter((s) => s.team === 'blue' && this.isSlotEnabled(s.slotIndex) && s.isBot);
+      const enabledRedOpen = this.slots.filter((s) => s.team === 'red' && this.isSlotEnabled(s.slotIndex) && s.isBot);
+      const blueHumans = this.slots.filter((s) => s.team === 'blue' && !s.isBot).length;
+      const redHumans = this.slots.filter((s) => s.team === 'red' && !s.isBot).length;
+
+      if (blueHumans <= redHumans) {
+        slot = enabledBlueOpen[0] ?? enabledRedOpen[0];
+      } else {
+        slot = enabledRedOpen[0] ?? enabledBlueOpen[0];
+      }
       if (!slot) {
-        this.sendTo(ws, { type: 'error', message: 'Room is full (6/6 players)' });
+        const cap = this.blueSize + this.redSize;
+        this.sendTo(ws, { type: 'error', message: `Room is full (${cap}/${cap} players)` });
         ws.close(4003, 'Room full');
         return;
       }
@@ -352,7 +393,7 @@ export class RoomManager {
         this.stopTicker();
         // Broadcast updated hostSlot on final snapshot so Results UI updates immediately
         const finalSnap = serializeSnapshot(this.engine.state, [], this.tickCount, this.brokenWalls);
-        finalSnap.hostSlot = this.hostSlot;
+        finalSnap.hostSlot = this.lobbyToMatchSlot.get(this.hostSlot) ?? this.hostSlot;
         this.broadcast({ type: 'snapshot', snapshot: finalSnap });
       }
       if (this.countConnectedHumans() === 0) {
@@ -433,13 +474,16 @@ export class RoomManager {
 
     if (msg.type === 'input') {
       if (this.engine && this.isMatchRunning()) {
+        const matchSlotIdx = this.lobbyToMatchSlot.get(slotIdx);
+        if (matchSlotIdx === undefined) return;
         const decoded = dequantizeInput(msg.input);
-        const prev = this.latchedInputs.get(slotIdx);
-        this.latchedInputs.set(slotIdx, {
+        const prev = this.latchedInputs.get(matchSlotIdx);
+        this.latchedInputs.set(matchSlotIdx, {
           base: decoded,
           firePulse: (prev?.firePulse ?? false) || decoded.fire,
           superPulse: (prev?.superPulse ?? false) || decoded.superFire,
           autoAimPulse: (prev?.autoAimPulse ?? false) || decoded.autoAim,
+          tacklePulse: (prev?.tacklePulse ?? false) || Boolean(decoded.tackle),
         });
       }
       return;
@@ -472,6 +516,15 @@ export class RoomManager {
         this.mode = msg.mode;
         this.broadcast({ type: 'lobby', lobby: this.getLobby() });
       }
+    } else if (msg.type === 'set_team_sizes') {
+      if (slotIdx === this.hostSlot) {
+        this.setTeamSizes(msg.blueSize, msg.redSize);
+      }
+    } else if (msg.type === 'set_fill_bots') {
+      if (slotIdx === this.hostSlot) {
+        this.fillBots = Boolean(msg.fillBots);
+        this.broadcast({ type: 'lobby', lobby: this.getLobby() });
+      }
     } else if (msg.type === 'switch_team') {
       this.switchSlotTeam(slotIdx, msg.team);
     } else if (msg.type === 'start_match') {
@@ -481,24 +534,18 @@ export class RoomManager {
     }
   }
 
-  private switchSlotTeam(slotIdx: number, targetTeam: Team): void {
-    const current = this.slots[slotIdx];
-    if (current.team === targetTeam) return;
-    const targetIndices = targetTeam === 'blue' ? [0, 1, 2] : [3, 4, 5];
-    const openBotSlot = targetIndices.map((i) => this.slots[i]).find((s) => s.isBot);
-    if (!openBotSlot) return;
-
-    // Move human into openBotSlot and restore old slot as bot
-    const oldIdx = current.slotIndex;
-    const newIdx = openBotSlot.slotIndex;
+  private moveHumanBetweenSlots(oldIdx: number, newIdx: number): void {
+    if (oldIdx === newIdx) return;
+    const current = this.slots[oldIdx];
+    const target = this.slots[newIdx];
     const ws = current.socket;
 
-    openBotSlot.isBot = false;
-    openBotSlot.connected = current.connected;
-    openBotSlot.token = current.token;
-    openBotSlot.name = current.name;
-    openBotSlot.brawlerId = current.brawlerId;
-    openBotSlot.socket = ws;
+    target.isBot = false;
+    target.connected = current.connected;
+    target.token = current.token;
+    target.name = current.name;
+    target.brawlerId = current.brawlerId;
+    target.socket = ws;
 
     const fallbackBrawler = DEFAULT_BOT_BRAWLERS[oldIdx % DEFAULT_BOT_BRAWLERS.length];
     current.isBot = true;
@@ -510,6 +557,96 @@ export class RoomManager {
 
     if (ws) {
       this.socketToSlot.set(ws, newIdx);
+    }
+    if (this.hostSlot === oldIdx) {
+      this.hostSlot = newIdx;
+    }
+  }
+
+  private setTeamSizes(rawBlue: number, rawRed: number): void {
+    const reqBlue = Math.max(1, Math.min(3, Math.floor(rawBlue)));
+    const reqRed = Math.max(1, Math.min(3, Math.floor(rawRed)));
+
+    const blueHumans = this.slots.filter((s) => s.team === 'blue' && !s.isBot);
+    const redHumans = this.slots.filter((s) => s.team === 'red' && !s.isBot);
+
+    // Ensure requested sizes never drop currently connected human players; relocate overflow if opposite team has room
+    let nextBlue = reqBlue;
+    let nextRed = reqRed;
+    const movedSockets: InternalSlot[] = [];
+
+    if (blueHumans.length > nextBlue) {
+      const overflow = blueHumans.slice(nextBlue);
+      for (const h of overflow) {
+        const redOpen = [3, 4, 5].slice(0, nextRed).map((i) => this.slots[i]).find((s) => s.isBot);
+        if (redOpen) {
+          this.moveHumanBetweenSlots(h.slotIndex, redOpen.slotIndex);
+          movedSockets.push(redOpen);
+        }
+      }
+    }
+    if (redHumans.length > nextRed) {
+      const overflow = redHumans.slice(nextRed);
+      for (const h of overflow) {
+        const blueOpen = [0, 1, 2].slice(0, nextBlue).map((i) => this.slots[i]).find((s) => s.isBot);
+        if (blueOpen) {
+          this.moveHumanBetweenSlots(h.slotIndex, blueOpen.slotIndex);
+          movedSockets.push(blueOpen);
+        }
+      }
+    }
+
+    // Compact remaining humans to lowest indices on each team so enabled slots 0..size-1 hold all humans
+    for (const [indices, size] of [
+      [[0, 1, 2], nextBlue],
+      [[3, 4, 5], nextRed],
+    ] as const) {
+      const humans = indices.map((i) => this.slots[i]).filter((s) => !s.isBot);
+      for (let k = 0; k < humans.length; k++) {
+        const targetIdx = indices[k];
+        if (humans[k].slotIndex !== targetIdx && this.slots[targetIdx].isBot) {
+          this.moveHumanBetweenSlots(humans[k].slotIndex, targetIdx);
+          movedSockets.push(this.slots[targetIdx]);
+        }
+      }
+      if (indices[0] === 0) nextBlue = Math.max(size, humans.length);
+      else nextRed = Math.max(size, humans.length);
+    }
+
+    this.blueSize = nextBlue;
+    this.redSize = nextRed;
+
+    // Update any relocated clients with their new lobby slot index
+    const lobby = this.getLobby();
+    for (const s of movedSockets) {
+      if (s.socket && s.connected) {
+        this.sendTo(s.socket, {
+          type: 'welcome',
+          slotIndex: s.slotIndex,
+          team: s.team,
+          token: s.token ?? '',
+          lobby,
+        });
+      }
+    }
+    this.broadcast({ type: 'lobby', lobby });
+  }
+
+  private switchSlotTeam(slotIdx: number, targetTeam: Team): void {
+    const current = this.slots[slotIdx];
+    if (current.team === targetTeam) return;
+    const targetIndices = targetTeam === 'blue' ? [0, 1, 2] : [3, 4, 5];
+    const openBotSlot = targetIndices
+      .filter((i) => this.isSlotEnabled(i))
+      .map((i) => this.slots[i])
+      .find((s) => s.isBot);
+    if (!openBotSlot) return;
+
+    const newIdx = openBotSlot.slotIndex;
+    const ws = current.socket;
+    this.moveHumanBetweenSlots(current.slotIndex, newIdx);
+
+    if (ws) {
       this.sendTo(ws, {
         type: 'welcome',
         slotIndex: newIdx,
@@ -518,20 +655,33 @@ export class RoomManager {
         lobby: this.getLobby(),
       });
     }
-    if (this.hostSlot === oldIdx) {
-      this.hostSlot = newIdx;
-    }
 
     this.broadcast({ type: 'lobby', lobby: this.getLobby() });
   }
 
   private startMatch(): void {
-    // Assign varied distinct brawlers to bot slots
+    const enabledSlots = this.slots.filter((s) => this.isSlotEnabled(s.slotIndex));
+    const activeSlots = enabledSlots.filter((s) => !s.isBot || this.fillBots);
+    const blueCount = activeSlots.filter((s) => s.team === 'blue').length;
+    const redCount = activeSlots.filter((s) => s.team === 'red').length;
+
+    if (blueCount === 0 || redCount === 0) {
+      const host = this.hostSlot >= 0 ? this.slots[this.hostSlot] : null;
+      if (host?.socket) {
+        this.sendTo(host.socket, {
+          type: 'error',
+          message: 'Need at least 1 player on both Blue and Red teams (or turn Fill Bots ON)',
+        });
+      }
+      return;
+    }
+
+    // Assign varied distinct brawlers to active bot slots
     const usedByTeam: Record<Team, Set<BrawlerId>> = { blue: new Set(), red: new Set() };
-    for (const s of this.slots) {
+    for (const s of activeSlots) {
       if (!s.isBot) usedByTeam[s.team].add(s.brawlerId);
     }
-    for (const s of this.slots) {
+    for (const s of activeSlots) {
       if (s.isBot) {
         const pick =
           BRAWLER_LIST.find((b) => !usedByTeam[s.team].has(b.id))?.id ??
@@ -542,13 +692,17 @@ export class RoomManager {
       }
     }
 
-    const setup: SlotSetup[] = this.slots.map((s) => ({
-      slotIndex: s.slotIndex,
-      team: s.team,
-      name: s.name,
-      isBot: s.isBot,
-      brawlerId: s.brawlerId,
-    }));
+    this.lobbyToMatchSlot.clear();
+    const setup: SlotSetup[] = activeSlots.map((s, matchIdx) => {
+      this.lobbyToMatchSlot.set(s.slotIndex, matchIdx);
+      return {
+        slotIndex: matchIdx,
+        team: s.team,
+        name: s.name,
+        isBot: s.isBot,
+        brawlerId: s.brawlerId,
+      };
+    });
 
     this.engine = new MatchEngine({
       mapId: this.mapId,
@@ -562,14 +716,14 @@ export class RoomManager {
     this.latchedInputs.clear();
 
     const initialSnap = serializeSnapshot(this.engine.state, [], 0, []);
-    initialSnap.hostSlot = this.hostSlot;
-    for (const s of this.slots) {
+    initialSnap.hostSlot = this.lobbyToMatchSlot.get(this.hostSlot) ?? 0;
+    for (const s of activeSlots) {
       if (s.socket && s.connected) {
         this.sendTo(s.socket, {
           type: 'match_start',
           mapId: this.mapId,
           mode: this.mode,
-          slotIndex: s.slotIndex,
+          slotIndex: this.lobbyToMatchSlot.get(s.slotIndex) ?? 0,
           team: s.team,
           snapshot: initialSnap,
         });
@@ -583,6 +737,7 @@ export class RoomManager {
     this.engine = null;
     this.botAi = null;
     this.brokenWalls = [];
+    this.lobbyToMatchSlot.clear();
 
     // Clean up any players who disconnected during match
     for (const s of this.slots) {
@@ -600,7 +755,20 @@ export class RoomManager {
       this.hostSlot = next ? next.slotIndex : -1;
     }
 
-    this.broadcast({ type: 'lobby', lobby: this.getLobby() });
+    const lobby = this.getLobby();
+    // Restore every connected human client's lobby slotIndex before broadcasting lobby
+    for (const s of this.slots) {
+      if (s.socket && s.connected) {
+        this.sendTo(s.socket, {
+          type: 'welcome',
+          slotIndex: s.slotIndex,
+          team: s.team,
+          token: s.token ?? '',
+          lobby,
+        });
+      }
+    }
+    this.broadcast({ type: 'lobby', lobby });
   }
 
   public stepSimulation(dt: number): void {
@@ -614,25 +782,28 @@ export class RoomManager {
       if (!s.isBot && !s.connected && s.disconnectTimer > 0) {
         s.disconnectTimer = Math.max(0, s.disconnectTimer - dt);
         if (s.disconnectTimer === 0) {
-          const brawler = this.engine.state.brawlers[s.slotIndex];
+          const matchIdx = this.lobbyToMatchSlot.get(s.slotIndex);
+          const brawler = matchIdx !== undefined ? this.engine.state.brawlers[matchIdx] : undefined;
           if (brawler) brawler.isBot = true;
         }
       }
     }
 
     // Apply latched human inputs so short pulses never drop between 50ms ticks
-    for (const [slotIdx, latched] of this.latchedInputs) {
-      const brawler = this.engine.state.brawlers[slotIdx];
+    for (const [matchSlotIdx, latched] of this.latchedInputs) {
+      const brawler = this.engine.state.brawlers[matchSlotIdx];
       if (!brawler || brawler.isBot) continue;
-      this.engine.setInput(slotIdx, {
+      this.engine.setInput(matchSlotIdx, {
         ...latched.base,
         fire: latched.base.fire || latched.firePulse,
         superFire: latched.base.superFire || latched.superPulse,
         autoAim: latched.base.autoAim || latched.autoAimPulse,
+        tackle: Boolean(latched.base.tackle) || latched.tacklePulse,
       });
       latched.firePulse = false;
       latched.superPulse = false;
       latched.autoAimPulse = false;
+      latched.tacklePulse = false;
     }
 
     const botInputs = this.botAi.computeInputs(this.engine.state, dt);
@@ -649,7 +820,7 @@ export class RoomManager {
     }
 
     const snap = serializeSnapshot(this.engine.state, events, this.tickCount, this.brokenWalls);
-    snap.hostSlot = this.hostSlot;
+    snap.hostSlot = this.lobbyToMatchSlot.get(this.hostSlot) ?? 0;
     this.broadcast({ type: 'snapshot', snapshot: snap });
 
     if (this.engine.state.phase === 'ended') {
@@ -723,6 +894,10 @@ export class RoomDurableObject {
             brawlerId: meta.brawlerId ?? 'buck',
             isHost: Boolean(meta.isHost),
             mapId: meta.mapId,
+            mode: meta.mode,
+            blueSize: meta.blueSize,
+            redSize: meta.redSize,
+            fillBots: meta.fillBots,
           });
         }
       }

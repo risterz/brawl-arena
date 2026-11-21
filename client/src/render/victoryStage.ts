@@ -252,12 +252,19 @@ export function buildResultsStage(state: MatchState, localSlot: number): Results
   floor.position.y = floorY;
   group.add(floor);
 
-  // 3. Three tiered Brawl Stars pedestals (Left, Raised Center MVP, Right)
-  const slotLayout: Record<'left' | 'center' | 'right', { x: number; y: number; z: number; yaw: number; scale: number; rad: number }> = {
-    left:   { x: -2.25, y: 0.0,  z: -0.45, yaw: 0.24,  scale: 1.18, rad: 1.15 },
-    center: { x:  0.00, y: 0.26, z:  0.48, yaw: 0.0,   scale: 1.38, rad: 1.42 },
-    right:  { x:  2.25, y: 0.0,  z: -0.45, yaw: -0.24, scale: 1.18, rad: 1.15 },
-  };
+  // 3. Tiered Brawl Stars pedestals (auto-centers cleanly for 1, 2, or 3 players on a team!)
+  const slotLayout: Record<'left' | 'center' | 'right', { x: number; y: number; z: number; yaw: number; scale: number; rad: number }> =
+    members.length === 2
+      ? {
+          left:   { x: -1.32, y: 0.02, z: -0.15, yaw: 0.16,  scale: 1.22, rad: 1.20 },
+          center: { x:  1.15, y: 0.24, z:  0.32, yaw: -0.14, scale: 1.36, rad: 1.38 },
+          right:  { x:  2.25, y: 0.0,  z: -0.45, yaw: -0.24, scale: 1.18, rad: 1.15 },
+        }
+      : {
+          left:   { x: -2.25, y: 0.0,  z: -0.45, yaw: 0.24,  scale: 1.18, rad: 1.15 },
+          center: { x:  0.00, y: 0.26, z:  0.48, yaw: 0.0,   scale: 1.38, rad: 1.42 },
+          right:  { x:  2.25, y: 0.0,  z: -0.45, yaw: -0.24, scale: 1.18, rad: 1.15 },
+        };
 
   const brawlerEntries: Array<{
     visual: BrawlerVisual;

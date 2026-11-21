@@ -36,6 +36,9 @@ function boot(): void {
   let selectedBrawler: BrawlerId = 'buck';
   let selectedMap: MapId = 'crystal-cavern';
   let selectedMode: GameMode = 'gem-grab';
+  let selectedBlueSize = 3;
+  let selectedRedSize = 3;
+  let pendingRoomConfig: { mapId: MapId; mode: GameMode; blueSize: number; redSize: number } | null = null;
   let activeMatchMap: MapId = 'crystal-cavern';
   let localMatch: LocalMatchController | null = null;
   let resultsShown = false;
@@ -68,6 +71,16 @@ function boot(): void {
       controls.setActive(false);
       hud.hide();
       sfx.playBgm('lobby');
+      if (pendingRoomConfig && lobby.hostSlot === mySlot) {
+        const cfg = pendingRoomConfig;
+        pendingRoomConfig = null;
+        online.pickMap(cfg.mapId);
+        online.pickMode(cfg.mode);
+        online.setTeamSizes(cfg.blueSize, cfg.redSize);
+        if (cfg.blueSize < 3 || cfg.redSize < 3) {
+          online.setFillBots(false);
+        }
+      }
       renderer.setPreviewBrawler(lobby.slots[mySlot]?.brawlerId ?? selectedBrawler, lobby.mode ?? 'gem-grab');
       screens.renderLobby({
         lobby,
@@ -88,6 +101,14 @@ function boot(): void {
         onPickMode: (nextMode) => {
           sfx.playUiSelect();
           online.pickMode(nextMode);
+        },
+        onSetTeamSizes: (blueSize, redSize) => {
+          sfx.playUiSelect();
+          online.setTeamSizes(blueSize, redSize);
+        },
+        onSetFillBots: (fillBots) => {
+          sfx.playUiSelect();
+          online.setFillBots(fillBots);
         },
         onStartMatch: () => {
           sfx.playUiClick();
@@ -165,6 +186,8 @@ function boot(): void {
       selectedBrawler,
       selectedMap,
       selectedMode,
+      blueSize: selectedBlueSize,
+      redSize: selectedRedSize,
       sfxMuted: sfx.isSfxMuted(),
       bgmMuted: sfx.isBgmMuted(),
       onToggleSfx: () => {
@@ -214,6 +237,13 @@ function boot(): void {
         selectedMode = nextMode;
         showHome();
       },
+      onSelectFormat: (blueSize, redSize) => {
+        sfx.unlock();
+        sfx.playUiSelect();
+        selectedBlueSize = blueSize;
+        selectedRedSize = redSize;
+        showHome();
+      },
       onPlaySolo: () => {
         sfx.unlock();
         sfx.playUiClick();
@@ -223,9 +253,16 @@ function boot(): void {
         try {
           sfx.unlock();
           sfx.playUiClick();
+          pendingRoomConfig = {
+            mapId: selectedMap,
+            mode: selectedMode,
+            blueSize: selectedBlueSize,
+            redSize: selectedRedSize,
+          };
           const code = await online.createRoom();
           online.connect(code, playerName);
         } catch {
+          pendingRoomConfig = null;
           screens.showToast('Could not reach room server', 'error');
         }
       },
@@ -252,6 +289,8 @@ function boot(): void {
     localMatch = new LocalMatchController({
       mapId: selectedMap,
       mode: selectedMode,
+      blueSize: selectedBlueSize,
+      redSize: selectedRedSize,
       playerBrawler: selectedBrawler,
       playerName,
     });

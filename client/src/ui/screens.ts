@@ -16,6 +16,8 @@ export interface HomeViewProps {
   selectedBrawler: BrawlerId;
   selectedMap: MapId;
   selectedMode: GameMode;
+  blueSize: number;
+  redSize: number;
   sfxMuted: boolean;
   bgmMuted: boolean;
   onToggleSfx: () => boolean;
@@ -24,6 +26,7 @@ export interface HomeViewProps {
   onOpenBrawlers: () => void;
   onSelectMap: (mapId: MapId) => void;
   onSelectMode: (mode: GameMode) => void;
+  onSelectFormat: (blueSize: number, redSize: number) => void;
   onPlaySolo: () => void;
   onCreateRoom: () => void;
   onJoinRoom: (code: string) => void;
@@ -36,6 +39,8 @@ export interface LobbyViewProps {
   onSwitchTeam: (team: Team) => void;
   onPickMap: (mapId: MapId) => void;
   onPickMode: (mode: GameMode) => void;
+  onSetTeamSizes: (blueSize: number, redSize: number) => void;
+  onSetFillBots: (fillBots: boolean) => void;
   onStartMatch: () => void;
   onLeave: () => void;
   onCopyInvite: (code: string) => void;
@@ -100,13 +105,27 @@ export class ScreenManager {
           `<button class="map-chip mode-chip ${m.id === props.selectedMode ? 'active' : ''}" data-mode="${m.id}">${m.label}</button>`,
       )
       .join('');
+    const formatPresets: Array<[number, number, string]> = [
+      [1, 1, '1v1'],
+      [2, 2, '2v2'],
+      [1, 2, '1v2'],
+      [2, 1, '2v1'],
+      [3, 3, '3v3'],
+    ];
+    const formatChips = formatPresets
+      .map(
+        ([bs, rs, label]) =>
+          `<button class="map-chip format-chip ${props.blueSize === bs && props.redSize === rs ? 'active' : ''}" data-blue="${bs}" data-red="${rs}">${label}</button>`,
+      )
+      .join('');
+    const fmtLabel = `${props.blueSize}v${props.redSize}`;
 
     this.container.innerHTML = `
       <div class="home-shell">
         <div class="home-top">
           <div class="brand-badge">
             <h1>BRAWL ARENA</h1>
-            <span>3v3 Gem Grab &amp; Brawl Ball • 3D Arena</span>
+            <span>Custom 1v1 • 2v2 • 1v2 • 3v3 • 3D Arena</span>
           </div>
           <div class="action-row">
             <button id="home-bgm-btn" class="btn btn-dark btn-sm">${props.bgmMuted ? '🔇 BGM' : '🎵 BGM'}</button>
@@ -137,10 +156,11 @@ export class ScreenManager {
 
           <div class="action-deck">
             <div class="map-chip-row">${modeChips}</div>
+            <div class="map-chip-row">${formatChips}</div>
             <div class="map-chip-row">${mapChips}</div>
             <div class="action-row">
-              <button id="play-solo-btn" class="btn btn-gold">PLAY SOLO vs BOTS</button>
-              <button id="create-room-btn" class="btn btn-purple">CREATE ROOM</button>
+              <button id="play-solo-btn" class="btn btn-gold">PLAY ${fmtLabel} vs BOTS</button>
+              <button id="create-room-btn" class="btn btn-purple">CUSTOM ROOM (${fmtLabel})</button>
             </div>
             <div class="action-row">
               <input id="join-code-input" class="code-input" maxlength="4" placeholder="CODE" />
@@ -194,6 +214,12 @@ export class ScreenManager {
       btn.addEventListener('click', () => {
         const id = (btn as HTMLElement).dataset.mode as GameMode;
         props.onSelectMode(id);
+      });
+    });
+    this.container.querySelectorAll('[data-blue]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const el = btn as HTMLElement;
+        props.onSelectFormat(Number(el.dataset.blue), Number(el.dataset.red));
       });
     });
   }
@@ -258,14 +284,27 @@ export class ScreenManager {
     const { lobby, mySlot } = props;
     const isHost = lobby.hostSlot === mySlot;
     const myBrawler = lobby.slots[mySlot]?.brawlerId ?? 'buck';
+    const blueSize = lobby.blueSize ?? 3;
+    const redSize = lobby.redSize ?? 3;
+    const fillBots = lobby.fillBots ?? true;
 
     const renderTeamCol = (team: Team) => {
-      const slots = lobby.slots.filter((s) => s.team === team);
+      const cap = team === 'blue' ? blueSize : redSize;
+      const slots = lobby.slots.filter((s) => s.team === team && (s.enabled ?? true));
+      const humanCount = slots.filter((s) => !s.isBot).length;
       const rows = slots
         .map((s) => {
           const isMe = s.slotIndex === mySlot;
           const b = BRAWLERS[s.brawlerId];
           const hostCrown = s.slotIndex === lobby.hostSlot ? ' 👑' : '';
+          if (s.isBot && !fillBots) {
+            return `
+              <div class="slot-row empty">
+                <span style="color:#89a7db;">Open Player Slot <span class="open-badge">OPEN</span></span>
+                <span style="color:#6c86b8;font-size:12px;">Waiting...</span>
+              </div>
+            `;
+          }
           const badge = s.isBot ? '<span class="bot-badge">BOT</span>' : '';
           return `
             <div class="slot-row ${isMe ? 'me' : ''}">
@@ -283,7 +322,7 @@ export class ScreenManager {
           : '';
       return `
         <div class="team-col ${team}">
-          <strong style="font-family:'Fredoka',sans-serif;font-size:18px;color:${team === 'blue' ? '#54c7ff' : '#ff6b7a'}">${team.toUpperCase()} TEAM</strong>
+          <strong style="font-family:'Fredoka',sans-serif;font-size:18px;color:${team === 'blue' ? '#54c7ff' : '#ff6b7a'}">${team.toUpperCase()} TEAM (${humanCount}/${cap})</strong>
           ${rows}
           ${switchBtn}
         </div>
@@ -312,22 +351,43 @@ export class ScreenManager {
       )
       .join('');
 
+    const formatPills = (
+      [
+        [1, 1, '1v1'],
+        [2, 2, '2v2'],
+        [1, 2, '1v2'],
+        [2, 1, '2v1'],
+        [3, 3, '3v3'],
+      ] as Array<[number, number, string]>
+    )
+      .map(
+        ([bs, rs, label]) =>
+          `<button class="map-chip format-chip ${blueSize === bs && redSize === rs ? 'active' : ''}" data-blue="${bs}" data-red="${rs}" ${isHost ? '' : 'disabled'}>${label}</button>`,
+      )
+      .join('');
+
+    const botToggleBtn = `<button id="toggle-fill-bots-btn" class="map-chip ${fillBots ? 'active' : ''}" ${isHost ? '' : 'disabled'}>${fillBots ? '🤖 Fill Bots: ON' : '👤 Players Only'}</button>`;
+
     this.container.innerHTML = `
       <div class="modal-backdrop">
         <div class="modal-card">
           <div class="modal-header">
             <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-              <h2>ROOM LOBBY</h2>
+              <h2>CUSTOM ROOM (${blueSize}v${redSize})</h2>
               <div class="room-code-pill" id="lobby-room-code">${escapeHtml(lobby.code)}</div>
               <button id="copy-invite-btn" class="btn btn-blue btn-sm">Copy Invite Link</button>
             </div>
             <button id="leave-lobby-btn" class="btn btn-red btn-sm">Leave</button>
           </div>
 
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
             <div>
               <div style="font-size:12px;color:#9ec5ff;font-weight:800;margin-bottom:4px;">YOUR BRAWLER</div>
               <div class="map-chip-row">${brawlerPills}</div>
+            </div>
+            <div>
+              <div style="font-size:12px;color:#9ec5ff;font-weight:800;margin-bottom:4px;">TEAM FORMAT ${isHost ? '(HOST)' : ''}</div>
+              <div class="map-chip-row">${formatPills}${botToggleBtn}</div>
             </div>
             <div>
               <div style="font-size:12px;color:#9ec5ff;font-weight:800;margin-bottom:4px;">MODE ${isHost ? '(HOST)' : ''}</div>
@@ -345,10 +405,14 @@ export class ScreenManager {
           </div>
 
           <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
-            <span style="font-size:13px;color:#9ec5ff;">Empty slots automatically fill with AI Bots on start.</span>
+            <span style="font-size:13px;color:#9ec5ff;">${
+              fillBots
+                ? `Empty slots fill with AI Bots on start (${blueSize}v${redSize}).`
+                : `Players-Only PvP: no bots spawn (need at least 1 human on each team).`
+            }</span>
             ${
               isHost
-                ? '<button id="start-match-btn" class="btn btn-gold">START 3v3 MATCH</button>'
+                ? `<button id="start-match-btn" class="btn btn-gold">START ${blueSize}v${redSize} MATCH</button>`
                 : '<span style="font-weight:800;color:#ffd43b;">Waiting for host to start...</span>'
             }
           </div>
@@ -372,6 +436,15 @@ export class ScreenManager {
       });
       this.container.querySelectorAll('[data-mode]').forEach((btn) => {
         btn.addEventListener('click', () => props.onPickMode((btn as HTMLElement).dataset.mode as GameMode));
+      });
+      this.container.querySelectorAll('[data-blue]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const el = btn as HTMLElement;
+          props.onSetTeamSizes(Number(el.dataset.blue), Number(el.dataset.red));
+        });
+      });
+      this.container.querySelector('#toggle-fill-bots-btn')?.addEventListener('click', () => {
+        props.onSetFillBots(!fillBots);
       });
     }
   }

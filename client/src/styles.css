@@ -543,6 +543,26 @@ body,
   color: #0b1326;
 }
 
+.format-chip.active {
+  background: linear-gradient(135deg, #29a8ff, #1474e6);
+  border-color: #ffd43b;
+  color: #fff;
+}
+
+.open-badge {
+  background: #1f4c73;
+  color: #7ee3ff;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  margin-left: 6px;
+}
+
+.slot-row.empty {
+  background: rgba(20, 34, 68, 0.55);
+  border: 1.5px dashed #395b9c;
+}
+
 .controls-hint {
   position: fixed;
   bottom: 10px;

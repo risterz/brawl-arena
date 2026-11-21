@@ -22,6 +22,7 @@ export interface LobbySlot {
   isBot: boolean;
   connected: boolean;
   ready: boolean;
+  enabled?: boolean;
   tokenHash?: string;
 }
 
@@ -29,6 +30,9 @@ export interface LobbyState {
   code: string;
   mapId: MapId;
   mode: GameMode;
+  blueSize?: number;
+  redSize?: number;
+  fillBots?: boolean;
   hostSlot: number;
   hostToken?: string;
   inMatch: boolean;
@@ -189,6 +193,8 @@ export type ClientMessage =
   | { type: 'switch_team'; team: Team }
   | { type: 'pick_map'; mapId: MapId }
   | { type: 'pick_mode'; mode: GameMode }
+  | { type: 'set_team_sizes'; blueSize: number; redSize: number }
+  | { type: 'set_fill_bots'; fillBots: boolean }
   | { type: 'start_match' }
   | { type: 'return_lobby' }
   | { type: 'input'; input: CompactInput }
