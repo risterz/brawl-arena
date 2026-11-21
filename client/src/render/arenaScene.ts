@@ -181,7 +181,10 @@ export class ArenaRenderer {
     this.clock += dt;
     if (this.previewVisual) {
       this.previewVisual.root.rotation.y = this.clock * 0.85;
-      this.previewVisual.bodyGroup.position.y = Math.sin(this.clock * 3.2) * 0.07;
+      this.previewVisual.updateAnimation(dt, false, false);
+      this.previewVisual.bodyGroup.position.y = this.previewVisual.hasAnimations
+        ? 0
+        : Math.sin(this.clock * 3.2) * 0.07;
       this.previewVisual.superRing.rotation.z = this.clock * 1.4;
     }
     this.camera.position.set(0, 2.8, 6.2);
@@ -562,10 +565,16 @@ export class ArenaRenderer {
       entry.visual.bodyGroup.rotation.y = -b.facing;
 
       const moving = Math.hypot(b.vx, b.vy) > 0.25;
-      const walkBob = moving && !b.leap ? Math.abs(Math.sin(this.clock * 12 + b.slotIndex)) * 0.1 : 0;
-      const recoilSquash = b.recoilTimer > 0 ? 1 + (b.recoilTimer / 0.22) * 0.14 : 1;
-      entry.visual.bodyGroup.position.y = heightY + walkBob;
-      entry.visual.bodyGroup.scale.set(recoilSquash, 1 / Math.sqrt(recoilSquash), recoilSquash);
+      if (entry.visual.hasAnimations) {
+        entry.visual.updateAnimation(dt, moving && !b.leap, b.recoilTimer > 0.14);
+        entry.visual.bodyGroup.position.y = heightY;
+        entry.visual.bodyGroup.scale.set(1, 1, 1);
+      } else {
+        const walkBob = moving && !b.leap ? Math.abs(Math.sin(this.clock * 12 + b.slotIndex)) * 0.1 : 0;
+        const recoilSquash = b.recoilTimer > 0 ? 1 + (b.recoilTimer / 0.22) * 0.14 : 1;
+        entry.visual.bodyGroup.position.y = heightY + walkBob;
+        entry.visual.bodyGroup.scale.set(recoilSquash, 1 / Math.sqrt(recoilSquash), recoilSquash);
+      }
 
       entry.visual.superRing.visible = b.superCharge >= 100;
       if (entry.visual.superRing.visible) {

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 export type ModelKey =
   | 'buck'
@@ -42,7 +43,12 @@ export const MODEL_MANIFEST: Record<ModelKey, string> = {
   bomb: '/models/bomb.glb',
 };
 
-const bank = new Map<ModelKey, THREE.Group>();
+interface BankEntry {
+  scene: THREE.Group;
+  animations: THREE.AnimationClip[];
+}
+
+const bank = new Map<ModelKey, BankEntry>();
 let preloadPromise: Promise<void> | null = null;
 
 /**
@@ -82,8 +88,12 @@ export function applyCartoonColorCorrection(root: THREE.Object3D): void {
   });
 }
 
-export function registerModelForTest(key: ModelKey, group: THREE.Group): void {
-  bank.set(key, group);
+export function registerModelForTest(
+  key: ModelKey,
+  group: THREE.Group,
+  animations: THREE.AnimationClip[] = [],
+): void {
+  bank.set(key, { scene: group, animations });
 }
 
 export function clearModelsForTest(): void {
@@ -104,8 +114,9 @@ export function createInstancedGlbBatch(
   transforms: THREE.Matrix4[],
   castShadow = false,
 ): THREE.Group | null {
-  const proto = bank.get(key);
-  if (!proto || transforms.length === 0) return null;
+  const entry = bank.get(key);
+  if (!entry || transforms.length === 0) return null;
+  const proto = entry.scene;
 
   proto.updateMatrixWorld(true);
   const batchGroup = new THREE.Group();
@@ -129,9 +140,9 @@ export function createInstancedGlbBatch(
 }
 
 export function cloneModel(key: ModelKey, cloneMaterials = false): THREE.Group | null {
-  const proto = bank.get(key);
-  if (!proto) return null;
-  const clone = proto.clone(true);
+  const entry = bank.get(key);
+  if (!entry) return null;
+  const clone = entry.scene.clone(true);
   if (cloneMaterials) {
     clone.traverse((child) => {
       if (child instanceof THREE.Mesh) {
@@ -144,6 +155,28 @@ export function cloneModel(key: ModelKey, cloneMaterials = false): THREE.Group |
     });
   }
   return clone;
+}
+
+/** Clones a rigged SkinnedMesh GLB safely via SkeletonUtils and returns its AnimationClips. */
+export function cloneAnimatedModel(
+  key: ModelKey,
+  cloneMaterials = false,
+): { root: THREE.Group; animations: THREE.AnimationClip[] } | null {
+  const entry = bank.get(key);
+  if (!entry) return null;
+  const clone = SkeletonUtils.clone(entry.scene) as THREE.Group;
+  if (cloneMaterials) {
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        if (Array.isArray(child.material)) {
+          child.material = child.material.map((m) => m.clone());
+        } else if (child.material) {
+          child.material = child.material.clone();
+        }
+      }
+    });
+  }
+  return { root: clone, animations: entry.animations };
 }
 
 export function preloadAllModels(): Promise<void> {
@@ -162,7 +195,7 @@ export function preloadAllModels(): Promise<void> {
         const gltf = await loader.loadAsync(url);
         const root = gltf.scene;
         applyCartoonColorCorrection(root);
-        bank.set(key, root);
+        bank.set(key, { scene: root, animations: gltf.animations ?? [] });
       } catch {
         // Fallback procedural mesh will be used cleanly if a model fails to load
       }

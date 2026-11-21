@@ -14,10 +14,12 @@ import {
   MODEL_MANIFEST,
   ModelKey,
   cloneModel,
+  cloneAnimatedModel,
   applyCartoonColorCorrection,
   registerModelForTest,
   clearModelsForTest,
 } from '../src/render/modelBank';
+import { createBrawlerMesh } from '../src/render/brawlerMeshes';
 
 describe('Sculpted 3D projectile, bomb, crystal, flame, and heal meshes', () => {
   it('builds distinct multi-part sculpted visuals (not plain spheres) for every brawler primary and Super', () => {
@@ -86,5 +88,21 @@ describe('Sculpted 3D projectile, bomb, crystal, flame, and heal meshes', () => 
     expect(mat.color.r).toBeGreaterThan(0.30);
     expect(mat.color.r).toBeLessThan(0.42);
     expect(mat.metalness).toBeLessThanOrEqual(0.28);
+
+    // Verify rigged GLB animations wire cleanly into BrawlerVisual
+    const rigProto = new THREE.Group();
+    rigProto.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial()));
+    const idleClip = new THREE.AnimationClip('Idle', 1.0, []);
+    const runClip = new THREE.AnimationClip('Run', 0.8, []);
+    const atkClip = new THREE.AnimationClip('Attack', 0.4, []);
+    registerModelForTest('buck', rigProto, [idleClip, runClip, atkClip]);
+
+    const clonedRig = cloneAnimatedModel('buck', true)!;
+    expect(clonedRig.animations).toHaveLength(3);
+    const visual = createBrawlerMesh('buck', 'blue', true);
+    expect(visual.hasAnimations).toBe(true);
+    visual.updateAnimation(0.016, true, false);
+    visual.updateAnimation(0.016, true, true);
+    clearModelsForTest();
   });
 });

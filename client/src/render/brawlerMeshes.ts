@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BrawlerId, BRAWLERS, Team } from '@brawl-arena/shared';
-import { cloneModel } from './modelBank';
+import { cloneAnimatedModel } from './modelBank';
 
 export interface BrawlerVisual {
   root: THREE.Group;
@@ -9,7 +9,9 @@ export interface BrawlerVisual {
   superRing: THREE.Mesh;
   shieldDome: THREE.Mesh;
   materials: THREE.Material[];
+  hasAnimations: boolean;
   setOpacity: (alpha: number) => void;
+  updateAnimation: (dt: number, isMoving: boolean, isAttacking: boolean) => void;
 }
 
 function makeToonMat(color: string | number, emissive = 0x000000): THREE.MeshToonMaterial {
@@ -81,9 +83,10 @@ export function createBrawlerMesh(
   shieldDome.visible = false;
   root.add(shieldDome);
 
-  // Prefer Blender-modeled GLB character when loaded!
-  const glbModel = cloneModel(brawlerId, true);
-  if (glbModel) {
+  // Prefer Blender-modeled GLB character (with skeletal AnimationMixer when rigged!)
+  const glbBundle = cloneAnimatedModel(brawlerId, true);
+  if (glbBundle) {
+    const { root: glbModel, animations } = glbBundle;
     glbModel.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         const mats = Array.isArray(child.material) ? child.material : [child.material];
@@ -93,6 +96,38 @@ export function createBrawlerMesh(
       }
     });
     bodyGroup.add(glbModel);
+
+    let mixer: THREE.AnimationMixer | null = null;
+    let idleAction: THREE.AnimationAction | null = null;
+    let runAction: THREE.AnimationAction | null = null;
+    let attackAction: THREE.AnimationAction | null = null;
+    let currentBase: 'idle' | 'run' = 'idle';
+    let attackActive = false;
+
+    if (animations.length > 0) {
+      mixer = new THREE.AnimationMixer(glbModel);
+      const findClip = (name: string) =>
+        animations.find((c) => c.name.toLowerCase().includes(name)) ?? null;
+      const idleClip = findClip('idle') ?? animations[0];
+      const runClip = findClip('run');
+      const attackClip = findClip('attack');
+
+      if (idleClip) {
+        idleAction = mixer.clipAction(idleClip);
+        idleAction.play();
+      }
+      if (runClip) {
+        runAction = mixer.clipAction(runClip);
+        runAction.timeScale = 1.25;
+      }
+      if (attackClip) {
+        attackAction = mixer.clipAction(attackClip);
+        attackAction.setLoop(THREE.LoopOnce, 1);
+        attackAction.clampWhenFinished = false;
+        attackAction.timeScale = 1.35;
+      }
+    }
+
     return {
       root,
       bodyGroup,
@@ -100,6 +135,7 @@ export function createBrawlerMesh(
       superRing,
       shieldDome,
       materials,
+      hasAnimations: mixer !== null,
       setOpacity(alpha: number) {
         const transparent = alpha < 0.99;
         for (const m of materials) {
@@ -109,6 +145,26 @@ export function createBrawlerMesh(
             m.needsUpdate = true;
           }
         }
+      },
+      updateAnimation(dt: number, isMoving: boolean, isAttacking: boolean) {
+        if (!mixer) return;
+        const desired: 'idle' | 'run' = isMoving && runAction ? 'run' : 'idle';
+        if (desired !== currentBase) {
+          const from = currentBase === 'run' ? runAction : idleAction;
+          const to = desired === 'run' ? runAction : idleAction;
+          if (to) {
+            to.reset().fadeIn(0.12).play();
+          }
+          if (from && from !== to) {
+            from.fadeOut(0.12);
+          }
+          currentBase = desired;
+        }
+        if (isAttacking && !attackActive && attackAction) {
+          attackAction.reset().setEffectiveWeight(1).fadeIn(0.05).play();
+        }
+        attackActive = isAttacking;
+        mixer.update(dt);
       },
     };
   }
@@ -320,6 +376,7 @@ export function createBrawlerMesh(
     superRing,
     shieldDome,
     materials,
+    hasAnimations: false,
     setOpacity(alpha: number) {
       const transparent = alpha < 0.99;
       for (const m of materials) {
@@ -329,6 +386,9 @@ export function createBrawlerMesh(
           m.needsUpdate = true;
         }
       }
+    },
+    updateAnimation() {
+      // Procedural fallback uses arenaScene bob/recoil
     },
   };
 }
