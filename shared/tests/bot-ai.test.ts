@@ -188,4 +188,42 @@ describe('Bot pathfinding and Gem Grab AI', () => {
       expect(totalGems).toBeGreaterThan(0);
     }
   }, 15000);
+
+  it('never returns a blocked wall coordinate from findNextWaypoint and settles 5-gem Red carrier cleanly without crate jitter', () => {
+    const grid = createGridCopy('crystal-cavern');
+    // Tile (7, 5) is a breakable crate on Crystal Cavern; from neighbor (7.5, 4.5) waypoint must remain walkable!
+    const wp = findNextWaypoint(grid, { x: 7.5, y: 4.5 }, { x: 7.2, y: 5.0 });
+    const wpTile = grid[Math.floor(wp.y) * MAP_WIDTH + Math.floor(wp.x)];
+    expect(wpTile === TileType.EMPTY || wpTile === TileType.BUSH).toBe(true);
+
+    // Red carrier (slot 4, Blaze) holding 5 gems retreats cleanly to open spawn zone and settles stably
+    const engine = new MatchEngine({ mapId: 'crystal-cavern', slots: allBotSlots() });
+    const blaze = engine.state.brawlers[4];
+    blaze.team = 'red';
+    blaze.gems = 5;
+    blaze.x = 7.5;
+    blaze.y = 4.5;
+    // Keep other bots away so only retreat movement is measured
+    for (const b of engine.state.brawlers) {
+      if (b.slotIndex !== 4) b.alive = false;
+    }
+
+    const ai = new BotController();
+    for (let i = 0; i < 60; i++) {
+      const inputs = ai.computeInputs(engine.state, 0.05);
+      engine.setInput(4, inputs.get(4)!);
+      engine.step(0.05);
+    }
+    // Should settle in open row y ~ 3.5 (NOT stuck at y ~ 4.55 against the y=5 crates!)
+    expect(blaze.y).toBeLessThan(4.1);
+    const settledX = blaze.x;
+    const settledY = blaze.y;
+    for (let i = 0; i < 20; i++) {
+      const inputs = ai.computeInputs(engine.state, 0.05);
+      engine.setInput(4, inputs.get(4)!);
+      engine.step(0.05);
+    }
+    // Once settled at home, should not jitter left/right!
+    expect(Math.hypot(blaze.x - settledX, blaze.y - settledY)).toBeLessThan(0.25);
+  });
 });

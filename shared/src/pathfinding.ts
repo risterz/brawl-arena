@@ -32,11 +32,15 @@ function findNearestWalkable(grid: Uint8Array, tx: number, ty: number): [number,
 }
 
 export function findNextWaypoint(grid: Uint8Array, from: Vec2, to: Vec2): Vec2 {
+  const rawGx = Math.floor(to.x);
+  const rawGy = Math.floor(to.y);
+  const rawWalkable = isWalkable(grid, rawGx, rawGy);
   const [sx, sy] = findNearestWalkable(grid, Math.floor(from.x), Math.floor(from.y));
-  const [gx, gy] = findNearestWalkable(grid, Math.floor(to.x), Math.floor(to.y));
+  const [gx, gy] = findNearestWalkable(grid, rawGx, rawGy);
 
   if (sx === gx && sy === gy) {
-    return { x: to.x, y: to.y };
+    // Never return raw `to` coordinates if they sit inside a wall/water tile!
+    return rawWalkable ? { x: to.x, y: to.y } : { x: gx + 0.5, y: gy + 0.5 };
   }
 
   const total = MAP_WIDTH * MAP_HEIGHT;

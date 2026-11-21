@@ -269,7 +269,7 @@ export class BotController {
 
       const cfg = BRAWLERS[bot.brawlerId];
       const hpRatio = bot.hp / bot.maxHp;
-      const homeY = bot.team === 'blue' ? 28.0 : 5.0;
+      const homeY = bot.team === 'blue' ? 29.5 : 3.5;
       const midHoldY = bot.team === 'blue' ? 19.2 : 13.8;
       const isCarrier = this.carrierByTeam[bot.team] === bot.slotIndex;
       const teamCarrier = state.brawlers.find(
@@ -327,7 +327,7 @@ export class BotController {
         if (safeBush && (bot.team === 'blue' ? safeBush.y > bot.y - 1.5 : safeBush.y < bot.y + 1.5)) {
           goal = safeBush;
         } else {
-          const homeX = bot.slotIndex % 3 === 0 ? 10.5 : bot.slotIndex % 3 === 1 ? 7.2 : 13.8;
+          const homeX = bot.slotIndex % 3 === 0 ? 10.5 : bot.slotIndex % 3 === 1 ? 6.5 : 14.5;
           goal = { x: homeX, y: homeY };
         }
       } else {
@@ -456,12 +456,13 @@ export class BotController {
       moveX += avoid.x;
       moveY += avoid.y;
 
-      // Anti-stuck detector (if trying to move but blocked on corner, steer cleanly around)
+      // Anti-stuck detector (only when actually far from goal and blocked on a corner, never when settled at home)
+      const distToGoal = Math.hypot(goal.x - bot.x, goal.y - bot.y);
       if (mem.unstuckTimer > 0) {
         mem.unstuckTimer -= dt;
         moveX += mem.unstuckDir.x * 1.1;
         moveY += mem.unstuckDir.y * 1.1;
-      } else if (mLen > 0.35) {
+      } else if (mLen > 0.35 && distToGoal > 1.2) {
         mem.stuckTimer += dt;
         if (mem.stuckTimer >= 0.55) {
           const moved = Math.hypot(bot.x - mem.lastCheckPos.x, bot.y - mem.lastCheckPos.y);
