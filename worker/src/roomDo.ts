@@ -24,6 +24,17 @@ export const SERVER_TICK_MS = 50; // 20 Hz
 export interface SocketLike {
   send(data: string): void;
   close(code?: number, reason?: string): void;
+  serializeAttachment?: (value: unknown) => void;
+}
+
+export interface HibernatedSocketMeta {
+  code?: string;
+  token: string;
+  name: string;
+  slotIndex: number;
+  brawlerId: BrawlerId;
+  isHost: boolean;
+  mapId?: MapId;
 }
 
 interface InternalSlot {
@@ -123,6 +134,7 @@ export class RoomManager {
   }
 
   private broadcast(msg: ServerMessage): void {
+    this.syncSocketAttachments();
     const raw = JSON.stringify(msg);
     for (const s of this.slots) {
       if (s.socket && s.connected) {
@@ -132,6 +144,50 @@ export class RoomManager {
           // Ignore broken pipe
         }
       }
+    }
+  }
+
+  private syncSocketAttachments(): void {
+    for (const s of this.slots) {
+      if (s.socket && s.connected && s.token && typeof s.socket.serializeAttachment === 'function') {
+        const meta: HibernatedSocketMeta = {
+          code: this.code,
+          token: s.token,
+          name: s.name,
+          slotIndex: s.slotIndex,
+          brawlerId: s.brawlerId,
+          isHost: s.slotIndex === this.hostSlot,
+          mapId: this.mapId,
+        };
+        try {
+          s.socket.serializeAttachment(meta);
+        } catch {
+          // Ignore attachment errors in tests or closing sockets
+        }
+      }
+    }
+  }
+
+  public restoreHibernatedSocket(ws: SocketLike, meta: HibernatedSocketMeta): void {
+    const idx = meta.slotIndex;
+    if (idx < 0 || idx >= this.slots.length) return;
+    const slot = this.slots[idx];
+    slot.isBot = false;
+    slot.connected = true;
+    slot.token = meta.token;
+    slot.name = sanitizeName(meta.name, `Player ${idx + 1}`);
+    if (BRAWLERS[meta.brawlerId]) {
+      slot.brawlerId = meta.brawlerId;
+    }
+    slot.socket = ws;
+    slot.disconnectTimer = 0;
+    this.socketToSlot.set(ws, idx);
+
+    if (meta.mapId && MAPS[meta.mapId]) {
+      this.mapId = meta.mapId;
+    }
+    if (meta.isHost || this.hostSlot === -1) {
+      this.hostSlot = idx;
     }
   }
 
@@ -561,11 +617,19 @@ export class RoomDurableObject {
           void this.ctx.storage.setAlarm(Date.now() + 10 * 60 * 1000);
         }
       });
-      // Restore any sockets that survived WebSocket Hibernation
+      // Restore ONLY previously accepted sockets that survived WebSocket Hibernation
       for (const ws of this.ctx.getWebSockets()) {
-        const meta = (ws.deserializeAttachment() as { token?: string; name?: string } | null) ?? {};
-        if (meta.token) {
-          this.manager.handleConnect(ws, meta.token, meta.name);
+        const meta = ws.deserializeAttachment() as Partial<HibernatedSocketMeta> | null;
+        if (meta && meta.token && typeof meta.slotIndex === 'number') {
+          this.manager.restoreHibernatedSocket(ws, {
+            code: meta.code ?? code,
+            token: meta.token,
+            name: meta.name ?? 'Player',
+            slotIndex: meta.slotIndex,
+            brawlerId: meta.brawlerId ?? 'buck',
+            isHost: Boolean(meta.isHost),
+            mapId: meta.mapId,
+          });
         }
       }
     }
@@ -577,8 +641,8 @@ export class RoomDurableObject {
     const code = (url.searchParams.get('code') ?? 'ROOM').toUpperCase();
 
     if (url.pathname === '/status') {
-      const active = this.manager ? this.manager.isActive() : false;
-      return Response.json({ active });
+      const mgr = this.getManager(code);
+      return Response.json({ active: mgr.isActive() });
     }
 
     if (request.headers.get('Upgrade') !== 'websocket') {
@@ -588,14 +652,14 @@ export class RoomDurableObject {
     const token = url.searchParams.get('token') ?? '';
     const name = url.searchParams.get('name') ?? '';
 
+    // Restore manager BEFORE accepting the new socket so getWebSockets() excludes it
+    const mgr = this.getManager(code);
+
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
 
     // Use WebSocket Hibernation API for Cloudflare Free plan efficiency
     this.ctx.acceptWebSocket(server);
-    server.serializeAttachment({ code, token, name });
-
-    const mgr = this.getManager(code);
     mgr.handleConnect(server, token, name);
 
     return new Response(null, { status: 101, webSocket: client });
@@ -603,12 +667,8 @@ export class RoomDurableObject {
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
     if (typeof message !== 'string') return;
-    const meta = (ws.deserializeAttachment() as { code?: string; token?: string; name?: string } | null) ?? {};
+    const meta = (ws.deserializeAttachment() as Partial<HibernatedSocketMeta> | null) ?? {};
     const mgr = this.getManager(meta.code ?? 'ROOM');
-    // Re-attach socket after hibernation wakeup if needed
-    if (!mgr.isActive() && meta.token) {
-      mgr.handleConnect(ws, meta.token, meta.name);
-    }
     mgr.handleMessage(ws, message);
   }
 

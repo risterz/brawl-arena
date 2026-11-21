@@ -9,12 +9,14 @@
   ],
   "scripts": {
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "build": "npm run build --workspace=@brawl-arena/shared && npm run build --workspace=@brawl-arena/client && npm run typecheck --workspace=@brawl-arena/worker",
     "dev:client": "npm run dev --workspace=@brawl-arena/client",
     "dev:worker": "npm run dev --workspace=@brawl-arena/worker",
     "deploy": "npm run build && npm run deploy --workspace=@brawl-arena/worker"
   },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "typescript": "^5.8.2",
     "vitest": "^3.1.1"
   }

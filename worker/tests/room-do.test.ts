@@ -88,4 +88,34 @@ describe('Room codes and RoomDurableObject lifecycle', () => {
     room.handleDisconnect(ws1);
     expect(room.getLobby().hostSlot).toBe(1);
   });
+
+  it('preserves original host slot, team, and brawler when restoring hibernated sockets in arbitrary order', () => {
+    const room = new RoomManager('K7MP');
+    const wsGuest = new MockSocket();
+    const wsHost = new MockSocket();
+
+    // Restore guest (slot 3, red) BEFORE host (slot 0, blue) as DO hibernation may return unordered sockets
+    room.restoreHibernatedSocket(wsGuest, {
+      token: 'tok-guest',
+      name: 'Guest',
+      slotIndex: 3,
+      brawlerId: 'mort',
+      isHost: false,
+    });
+    room.restoreHibernatedSocket(wsHost, {
+      token: 'tok-host',
+      name: 'Alpha',
+      slotIndex: 0,
+      brawlerId: 'vex',
+      isHost: true,
+    });
+
+    const lobby = room.getLobby();
+    expect(lobby.hostSlot).toBe(0);
+    expect(lobby.slots[0].name).toBe('Alpha');
+    expect(lobby.slots[0].brawlerId).toBe('vex');
+    expect(lobby.slots[3].name).toBe('Guest');
+    expect(lobby.slots[3].team).toBe('red');
+    expect(lobby.slots[3].brawlerId).toBe('mort');
+  });
 });
