@@ -105,11 +105,16 @@ export class ScreenManager {
 
         <div class="home-bottom">
           <div class="brawler-summary">
-            <h2>
-              <span class="swatch" style="background:${b.primaryColor}"></span>
-              ${escapeHtml(b.name)}
-              <span class="role-pill">${escapeHtml(b.role)}</span>
-            </h2>
+            <div class="brawler-summary-head">
+              <img class="brawler-avatar" src="/portraits/${b.id}.png" alt="${escapeHtml(b.name)}" style="border-color:${b.primaryColor};" />
+              <div>
+                <h2>
+                  ${escapeHtml(b.name)}
+                  <span class="role-pill">${escapeHtml(b.role)}</span>
+                </h2>
+                <div style="font-size:11px;font-weight:800;color:#9ec5ff;">HP ${b.maxHp} • Range ${b.attack.range} • Speed ${b.moveSpeed}</div>
+              </div>
+            </div>
             <p>${escapeHtml(b.description)}</p>
             <p style="color:#ffd43b;"><strong>Super:</strong> ${escapeHtml(b.superDescription)}</p>
             <button id="open-brawlers-btn" class="btn btn-blue btn-sm" style="margin-top:6px;">Change Brawler (6)</button>
@@ -181,16 +186,22 @@ export class ScreenManager {
     const cards = BRAWLER_LIST.map(
       (b) => `
         <div class="brawler-card ${b.id === selected ? 'selected' : ''}" data-id="${b.id}">
-          <div class="brawler-card-head">
-            <strong style="font-family:'Fredoka',sans-serif;font-size:20px;">
-              <span class="swatch" style="background:${b.primaryColor};vertical-align:middle;margin-right:6px;"></span>
-              ${escapeHtml(b.name)}
-            </strong>
-            <span class="role-pill">${escapeHtml(b.role)}</span>
+          <div class="brawler-portrait-stage" style="--p1:${b.primaryColor};--p2:${b.accentColor};">
+            <img class="brawler-portrait-img" src="/portraits/${b.id}.png" alt="${escapeHtml(b.name)}" />
+            <span class="role-pill brawler-portrait-role">${escapeHtml(b.role)}</span>
           </div>
-          <div style="font-size:12px;color:#9ec5ff;margin-bottom:6px;">HP ${b.maxHp} • Range ${b.attack.range} • Speed ${b.moveSpeed}</div>
-          <div style="font-size:12px;color:#e4f0ff;">${escapeHtml(b.description)}</div>
-          <div style="font-size:12px;color:#ffd43b;margin-top:4px;"><strong>Super:</strong> ${escapeHtml(b.superDescription)}</div>
+          <div class="brawler-card-body">
+            <div class="brawler-card-head">
+              <strong style="font-family:'Fredoka',sans-serif;font-size:20px;">
+                <span class="swatch" style="background:${b.primaryColor};vertical-align:middle;margin-right:6px;"></span>
+                ${escapeHtml(b.name)}
+              </strong>
+              <span style="font-size:11px;font-weight:900;color:#9ec5ff;">HP ${b.maxHp}</span>
+            </div>
+            <div style="font-size:11px;color:#9ec5ff;margin-bottom:5px;">Range ${b.attack.range} • Speed ${b.moveSpeed}</div>
+            <div style="font-size:12px;color:#e4f0ff;line-height:1.3;">${escapeHtml(b.description)}</div>
+            <div style="font-size:11.5px;color:#ffd43b;margin-top:4px;line-height:1.3;"><strong>Super:</strong> ${escapeHtml(b.superDescription)}</div>
+          </div>
         </div>
       `,
     ).join('');
