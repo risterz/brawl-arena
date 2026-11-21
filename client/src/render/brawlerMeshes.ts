@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { BrawlerId, BRAWLERS, getShopItem, Team } from '@brawl-arena/shared';
-import { cloneAnimatedModel } from './modelBank';
+import { cloneAnimatedModel, hasCustomSkinModel } from './modelBank';
 
 export type BrawlerEmote = 'none' | 'victory' | 'defeat';
 
@@ -138,8 +138,11 @@ export function createBrawlerMesh(
   shieldDome.visible = false;
   root.add(shieldDome);
 
-  // Prefer Blender-modeled GLB character (with skeletal AnimationMixer when rigged!)
-  const glbBundle = cloneAnimatedModel(brawlerId, true);
+  // Prefer dedicated custom skin GLB when available; otherwise use base brawler GLB + shader skin preset!
+  const usingCustomSkinGlb = hasCustomSkinModel(skinId);
+  const glbBundle = usingCustomSkinGlb
+    ? (cloneAnimatedModel(skinId, true) ?? cloneAnimatedModel(brawlerId, true))
+    : cloneAnimatedModel(brawlerId, true);
   if (glbBundle) {
     const { root: glbModel, animations } = glbBundle;
     glbModel.traverse((child) => {
@@ -157,7 +160,9 @@ export function createBrawlerMesh(
       }
     });
     bodyGroup.add(glbModel);
-    applyCosmeticSkinToMaterials(materials, skinId);
+    if (!usingCustomSkinGlb) {
+      applyCosmeticSkinToMaterials(materials, skinId);
+    }
 
     let mixer: THREE.AnimationMixer | null = null;
     let idleAction: THREE.AnimationAction | null = null;

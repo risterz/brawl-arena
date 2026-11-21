@@ -24,7 +24,8 @@ export type ModelKey =
   | 'potion_flask'
   | 'music_note'
   | 'bomb'
-  | 'brawl_ball';
+  | 'brawl_ball'
+  | 'skin_buck_cyber';
 
 export const MODEL_MANIFEST: Record<ModelKey, string> = {
   buck: '/models/buck.glb',
@@ -49,7 +50,12 @@ export const MODEL_MANIFEST: Record<ModelKey, string> = {
   music_note: '/models/music_note.glb',
   bomb: '/models/bomb.glb',
   brawl_ball: '/models/brawl_ball.glb',
+  skin_buck_cyber: '/models/skin_buck_cyber.glb',
 };
+
+export function hasCustomSkinModel(skinId?: string | null): skinId is ModelKey {
+  return Boolean(skinId && skinId in MODEL_MANIFEST);
+}
 
 interface BankEntry {
   scene: THREE.Group;
@@ -74,11 +80,13 @@ export function applyCartoonColorCorrection(root: THREE.Object3D): void {
     for (const mat of mats) {
       if (!mat) continue;
       if (mat instanceof THREE.MeshStandardMaterial) {
-        mat.color.setRGB(
-          Math.pow(Math.max(0, mat.color.r), GAMMA),
-          Math.pow(Math.max(0, mat.color.g), GAMMA),
-          Math.pow(Math.max(0, mat.color.b), GAMMA),
-        );
+        if (!mat.map) {
+          mat.color.setRGB(
+            Math.pow(Math.max(0, mat.color.r), GAMMA),
+            Math.pow(Math.max(0, mat.color.g), GAMMA),
+            Math.pow(Math.max(0, mat.color.b), GAMMA),
+          );
+        }
         if (mat.emissiveIntensity > 0) {
           mat.emissive.setRGB(
             Math.pow(Math.max(0, mat.emissive.r), GAMMA),
