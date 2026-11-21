@@ -45,6 +45,35 @@ export const MODEL_MANIFEST: Record<ModelKey, string> = {
 const bank = new Map<ModelKey, THREE.Group>();
 let preloadPromise: Promise<void> | null = null;
 
+/**
+ * Blender scripts author stylized palette values in sRGB space directly into
+ * Principled BSDF Base Color (which glTF exports verbatim as linear floats).
+ * Converting them from sRGB -> Linear restores deep, punchy Brawl Stars contrast
+ * instead of washed-out pastel midtones.
+ */
+export function applyCartoonColorCorrection(root: THREE.Object3D): void {
+  root.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    obj.castShadow = true;
+    obj.receiveShadow = true;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (const mat of mats) {
+      if (!mat) continue;
+      if (mat instanceof THREE.MeshStandardMaterial) {
+        mat.color.convertSRGBToLinear();
+        if (mat.emissiveIntensity > 0) {
+          mat.emissive.convertSRGBToLinear();
+        }
+        // Keep cartoon surfaces crisp without muddy metallic blackouts (no envMap)
+        if (mat.metalness > 0.35) {
+          mat.metalness = Math.min(0.35, mat.metalness * 0.4);
+        }
+        mat.roughness = Math.max(0.35, Math.min(0.85, mat.roughness));
+      }
+    }
+  });
+}
+
 export function registerModelForTest(key: ModelKey, group: THREE.Group): void {
   bank.set(key, group);
 }
@@ -124,12 +153,7 @@ export function preloadAllModels(): Promise<void> {
       try {
         const gltf = await loader.loadAsync(url);
         const root = gltf.scene;
-        root.traverse((obj) => {
-          if (obj instanceof THREE.Mesh) {
-            obj.castShadow = true;
-            obj.receiveShadow = true;
-          }
-        });
+        applyCartoonColorCorrection(root);
         bank.set(key, root);
       } catch {
         // Fallback procedural mesh will be used cleanly if a model fails to load

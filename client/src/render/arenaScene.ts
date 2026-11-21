@@ -27,17 +27,20 @@ function createCheckeredGroundTexture(mapId: MapId): THREE.CanvasTexture {
   canvas.height = 256;
   const ctx = canvas.getContext('2d')!;
   const isCavern = mapId === 'crystal-cavern';
-  const c1 = isCavern ? '#eab66e' : '#7ec850';
-  const c2 = isCavern ? '#dfaa60' : '#72bc46';
+  const c1 = isCavern ? '#d69040' : '#4fa339';
+  const c2 = isCavern ? '#c47d30' : '#43912e';
   ctx.fillStyle = c1;
   ctx.fillRect(0, 0, 256, 256);
   ctx.fillStyle = c2;
   ctx.fillRect(0, 0, 128, 128);
   ctx.fillRect(128, 128, 128, 128);
-  ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+  // Subtle darker tile bevel grout for crisp arcade grid contrast
+  ctx.strokeStyle = isCavern ? 'rgba(66, 30, 6, 0.16)' : 'rgba(14, 52, 16, 0.16)';
   ctx.lineWidth = 4;
   ctx.strokeRect(2, 2, 124, 124);
   ctx.strokeRect(130, 130, 124, 124);
+  ctx.strokeRect(130, 2, 124, 124);
+  ctx.strokeRect(2, 130, 124, 124);
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping;
@@ -96,21 +99,26 @@ export class ArenaRenderer {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     this.renderer.shadowMap.enabled = false;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.12;
+    // Linear tone mapping preserves punchy, vivid Supercell-style cartoon saturation
+    this.renderer.toneMapping = THREE.LinearToneMapping;
+    this.renderer.toneMappingExposure = 1.04;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#19335c');
+    this.scene.background = new THREE.Color('#0f1a36');
 
     this.camera = new THREE.PerspectiveCamera(CAMERA_FOV, 16 / 9, 0.5, 120);
 
-    // Bright cartoon daylight lighting
-    const hemi = new THREE.HemisphereLight(0xd9f2ff, 0x5c4738, 1.15);
+    // High-contrast 3-point arcade daylight lighting (rich warm key + deep cool shadow fill + rim)
+    const hemi = new THREE.HemisphereLight(0xcbe8ff, 0x262c4a, 0.78);
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xfff5db, 1.45);
-    sun.position.set(16, 28, 12);
+    const sun = new THREE.DirectionalLight(0xfff3d4, 1.85);
+    sun.position.set(18, 28, 10);
     this.scene.add(sun);
+
+    const rim = new THREE.DirectionalLight(0x6bb4ff, 0.55);
+    rim.position.set(-16, 14, -14);
+    this.scene.add(rim);
 
     this.mapGroup = new THREE.Group();
     this.previewGroup = new THREE.Group();
@@ -201,9 +209,9 @@ export class ArenaRenderer {
     }
     this.brawlers.clear();
 
-    // Arena floor
+    // Arena floor (MeshLambertMaterial avoids toon banding washout & pops with crisp key light)
     const floorGeo = new THREE.PlaneGeometry(MAP_WIDTH, MAP_HEIGHT);
-    const floorMat = new THREE.MeshToonMaterial({ map: createCheckeredGroundTexture(mapId) });
+    const floorMat = new THREE.MeshLambertMaterial({ map: createCheckeredGroundTexture(mapId) });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(MAP_WIDTH / 2, 0, MAP_HEIGHT / 2);
@@ -213,11 +221,21 @@ export class ArenaRenderer {
     // Outer surround floor
     const surround = new THREE.Mesh(
       new THREE.PlaneGeometry(MAP_WIDTH + 34, MAP_HEIGHT + 34),
-      new THREE.MeshBasicMaterial({ color: mapId === 'crystal-cavern' ? '#243456' : '#1b4965' }),
+      new THREE.MeshBasicMaterial({ color: mapId === 'crystal-cavern' ? '#121d38' : '#0f2c42' }),
     );
     surround.rotation.x = -Math.PI / 2;
     surround.position.set(MAP_WIDTH / 2, -0.05, MAP_HEIGHT / 2);
     this.mapGroup.add(surround);
+
+    // Subtle dark contact-shadow pad shared under breakable crates & solid props
+    const propShadowGeo = new THREE.PlaneGeometry(1.16, 1.16);
+    propShadowGeo.rotateX(-Math.PI / 2);
+    const propShadowMat = new THREE.MeshBasicMaterial({
+      color: 0x160d08,
+      transparent: true,
+      opacity: 0.32,
+      depthWrite: false,
+    });
 
     // Shared detailed crate geometries (banded wooden crate with cross-brace & iron rim)
     const crateCoreGeo = new THREE.BoxGeometry(0.88, 0.9, 0.88);
@@ -287,6 +305,9 @@ export class ArenaRenderer {
             brace.rotation.y = Math.PI / 4;
             grp.add(brace);
           }
+          const crateShadow = new THREE.Mesh(propShadowGeo, propShadowMat);
+          crateShadow.position.set(0.06, 0.015, 0.06);
+          grp.add(crateShadow);
           grp.position.set(cx, 0, cz);
           this.mapGroup.add(grp);
           this.breakableMeshes.set(`${tx},${ty}`, grp);
