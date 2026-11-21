@@ -27,15 +27,15 @@ function createCheckeredGroundTexture(mapId: MapId): THREE.CanvasTexture {
   canvas.height = 256;
   const ctx = canvas.getContext('2d')!;
   const isCavern = mapId === 'crystal-cavern';
-  const c1 = isCavern ? '#d69040' : '#4fa339';
-  const c2 = isCavern ? '#c47d30' : '#43912e';
+  const c1 = isCavern ? '#e2a85a' : '#65ba49';
+  const c2 = isCavern ? '#d4994a' : '#58ab3e';
   ctx.fillStyle = c1;
   ctx.fillRect(0, 0, 256, 256);
   ctx.fillStyle = c2;
   ctx.fillRect(0, 0, 128, 128);
   ctx.fillRect(128, 128, 128, 128);
-  // Subtle darker tile bevel grout for crisp arcade grid contrast
-  ctx.strokeStyle = isCavern ? 'rgba(66, 30, 6, 0.16)' : 'rgba(14, 52, 16, 0.16)';
+  // Subtle tile bevel grout for clean readability without harsh grid lines
+  ctx.strokeStyle = isCavern ? 'rgba(66, 30, 6, 0.10)' : 'rgba(14, 52, 16, 0.10)';
   ctx.lineWidth = 4;
   ctx.strokeRect(2, 2, 124, 124);
   ctx.strokeRect(130, 130, 124, 124);
@@ -99,24 +99,24 @@ export class ArenaRenderer {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     this.renderer.shadowMap.enabled = false;
-    // Linear tone mapping preserves punchy, vivid Supercell-style cartoon saturation
-    this.renderer.toneMapping = THREE.LinearToneMapping;
-    this.renderer.toneMappingExposure = 1.04;
+    // Neutral tone mapping keeps clean, vivid Brawl Stars daylight colors without harsh contrast
+    this.renderer.toneMapping = THREE.NeutralToneMapping;
+    this.renderer.toneMappingExposure = 1.05;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color('#0f1a36');
+    this.scene.background = new THREE.Color('#182a4f');
 
     this.camera = new THREE.PerspectiveCamera(CAMERA_FOV, 16 / 9, 0.5, 120);
 
-    // High-contrast 3-point arcade daylight lighting (rich warm key + deep cool shadow fill + rim)
-    const hemi = new THREE.HemisphereLight(0xcbe8ff, 0x262c4a, 0.78);
+    // Balanced daylight arcade lighting (soft warm bounce + clean key sun + light rim)
+    const hemi = new THREE.HemisphereLight(0xe8f6ff, 0x705d4e, 1.08);
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xfff3d4, 1.85);
+    const sun = new THREE.DirectionalLight(0xfff6e0, 1.38);
     sun.position.set(18, 28, 10);
     this.scene.add(sun);
 
-    const rim = new THREE.DirectionalLight(0x6bb4ff, 0.55);
+    const rim = new THREE.DirectionalLight(0x8ec8ff, 0.35);
     rim.position.set(-16, 14, -14);
     this.scene.add(rim);
 
@@ -227,13 +227,13 @@ export class ArenaRenderer {
     surround.position.set(MAP_WIDTH / 2, -0.05, MAP_HEIGHT / 2);
     this.mapGroup.add(surround);
 
-    // Subtle dark contact-shadow pad shared under breakable crates & solid props
-    const propShadowGeo = new THREE.PlaneGeometry(1.16, 1.16);
+    // Subtle soft contact-shadow pad under breakable crates
+    const propShadowGeo = new THREE.PlaneGeometry(1.12, 1.12);
     propShadowGeo.rotateX(-Math.PI / 2);
     const propShadowMat = new THREE.MeshBasicMaterial({
-      color: 0x160d08,
+      color: 0x24160c,
       transparent: true,
-      opacity: 0.32,
+      opacity: 0.2,
       depthWrite: false,
     });
 

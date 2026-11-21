@@ -77,13 +77,14 @@ describe('Sculpted 3D projectile, bomb, crystal, flame, and heal meshes', () => 
     expect((c1.children[0] as THREE.Mesh).material).not.toBe((c2.children[0] as THREE.Mesh).material);
     clearModelsForTest();
 
-    // Verify sRGB->Linear cartoon contrast correction deepens washed-out midtones & caps metallic darkout
+    // Verify balanced cartoon gamma (~1.45) deepens pastel midtones without crushing darks
     const testGrp = new THREE.Group();
     const mat = new THREE.MeshStandardMaterial({ metalness: 0.85, roughness: 0.2 });
     mat.color.setRGB(0.5, 0.5, 0.5);
     testGrp.add(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat));
     applyCartoonColorCorrection(testGrp);
-    expect(mat.color.r).toBeLessThan(0.25);
-    expect(mat.metalness).toBeLessThanOrEqual(0.35);
+    expect(mat.color.r).toBeGreaterThan(0.30);
+    expect(mat.color.r).toBeLessThan(0.42);
+    expect(mat.metalness).toBeLessThanOrEqual(0.28);
   });
 });
