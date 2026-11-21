@@ -60,6 +60,53 @@ function isWalkablePoint(grid: Uint8Array, x: number, y: number): boolean {
 }
 
 /**
+ * Finds the nearest walkable flank/peek position that gives unobstructed line-of-sight
+ * onto targetEnemy when the Gem Mine or cover crates block the direct line.
+ */
+function findPeekPoint(
+  state: MatchState,
+  bot: BrawlerState,
+  target: BrawlerState,
+  maxRange: number,
+  preferredSign: number,
+): Vec2 | null {
+  const dx = target.x - bot.x;
+  const dy = target.y - bot.y;
+  const dist = Math.max(0.1, Math.hypot(dx, dy));
+  const fx = dx / dist;
+  const fy = dy / dist;
+  // Perpendicular unit vector
+  const px = -fy;
+  const py = fx;
+
+  let best: Vec2 | null = null;
+  let bestScore = Infinity;
+
+  const lateralOffsets = [0.95, 1.45, 2.1, 3.0, 4.0];
+  const forwardOffsets = [0, 1.2, 2.4, 3.4, -0.8];
+  const signs = preferredSign >= 0 ? [1, -1] : [-1, 1];
+
+  for (const fwd of forwardOffsets) {
+    for (const lat of lateralOffsets) {
+      for (const s of signs) {
+        const cx = clamp(bot.x + px * lat * s + fx * fwd, 1.6, state.width - 1.6);
+        const cy = clamp(bot.y + py * lat * s + fy * fwd, 1.6, state.height - 1.6);
+        if (!isWalkablePoint(state.grid, cx, cy)) continue;
+        const dToTarget = Math.hypot(target.x - cx, target.y - cy);
+        if (dToTarget > maxRange * 0.96 || dToTarget < 1.2) continue;
+        if (!hasLineOfSight(state.grid, { x: cx, y: cy }, target)) continue;
+        const moveCost = Math.hypot(cx - bot.x, cy - bot.y) + (s === signs[0] ? 0 : 0.45);
+        if (moveCost < bestScore) {
+          bestScore = moveCost;
+          best = { x: cx, y: cy };
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/**
  * Computes steering vector to dodge incoming enemy projectiles, enemy toxic puddles,
  * and enemy ticking bombs while respecting arena walls/water.
  */
@@ -378,31 +425,49 @@ export class BotController {
             x: clamp(anchor.x, 2, state.width - 2),
             y: clamp(anchor.y + backY, 2, state.height - 2),
           };
-        } else if (isCarrier) {
-          goal = { x: map.minePos.x, y: midHoldY };
         } else if (targetEnemy) {
-          // Role-tuned ideal engagement spacing (snipers kite far, throwers keep safe arc, tanks rush in)
-          const idealFactor =
-            bot.brawlerId === 'golem'
-              ? 0.42
-              : bot.brawlerId === 'buck'
-                ? 0.58
-                : bot.brawlerId === 'vex'
-                  ? 0.90
-                  : bot.brawlerId === 'mort'
-                    ? 0.82
-                    : 0.75;
-          const idealDist = cfg.attack.range * idealFactor;
-          const dx = bot.x - targetEnemy.x;
-          const dy = bot.y - targetEnemy.y;
-          const d = Math.max(0.1, Math.hypot(dx, dy));
-          goal = {
-            x: clamp(targetEnemy.x + (dx / d) * idealDist, 2, state.width - 2),
-            y: clamp(targetEnemy.y + (dy / d) * idealDist, 2, state.height - 2),
-          };
+          // Engage visible enemy aggressively — if Gem Mine or crates block LOS, step sideways to peek!
+          const hasDirectLos = Boolean(cfg.attack.lobbed) || hasLineOfSight(state.grid, bot, targetEnemy);
+          const peekSpot = !hasDirectLos
+            ? findPeekPoint(state, bot, targetEnemy, cfg.attack.range, mem.strafeSign)
+            : null;
+          if (peekSpot) {
+            goal = peekSpot;
+          } else if (!hasDirectLos) {
+            // No nearby peek angle: advance around cover via BFS pathfinding until line-of-sight opens!
+            goal = { x: targetEnemy.x, y: targetEnemy.y };
+          } else {
+            // Role-tuned ideal engagement spacing (snipers kite far, throwers keep safe arc, tanks rush in)
+            const idealFactor =
+              bot.brawlerId === 'golem'
+                ? 0.42
+                : bot.brawlerId === 'buck'
+                  ? 0.58
+                  : bot.brawlerId === 'vex'
+                    ? 0.84
+                    : bot.brawlerId === 'mort'
+                      ? 0.80
+                      : 0.72;
+            const idealDist = cfg.attack.range * idealFactor;
+            const dx = bot.x - targetEnemy.x;
+            const dy = bot.y - targetEnemy.y;
+            const d = Math.max(0.1, Math.hypot(dx, dy));
+            // Slight lateral lane bias so ranged bots don't line up dead-center behind the Gem Mine
+            const sideBias = Math.abs(targetEnemy.x - map.minePos.x) < 1.6 && Math.abs(bot.x - map.minePos.x) < 1.6
+              ? mem.strafeSign * 2.2
+              : 0;
+            goal = {
+              x: clamp(targetEnemy.x + (dx / d) * idealDist + sideBias, 2, state.width - 2),
+              y: clamp(targetEnemy.y + (dy / d) * idealDist, 2, state.height - 2),
+            };
+          }
+        } else if (isCarrier) {
+          // Hold slightly off-center from the Gem Mine so carrier watches an open firing lane
+          const flankX = bot.slotIndex % 2 === 0 ? map.minePos.x - 2.1 : map.minePos.x + 2.1;
+          goal = { x: flankX, y: midHoldY };
         } else {
-          // Spread across 3 tactical lanes
-          const laneX = bot.slotIndex % 3 === 1 ? 5.2 : bot.slotIndex % 3 === 2 ? 15.8 : 10.5;
+          // Spread across 3 tactical lanes (offset away from dead-center mine)
+          const laneX = bot.slotIndex % 3 === 1 ? 5.2 : bot.slotIndex % 3 === 2 ? 15.8 : 8.4;
           goal = { x: laneX, y: midHoldY };
         }
       }
@@ -424,11 +489,13 @@ export class BotController {
         moveY = 0;
       }
 
-      // Active kiting for long-range squishes (Vex / Mort / Blaze) when rushed up close!
+      // Active kiting for long-range squishes (Vex / Mort / Blaze) ONLY when close enemy actually threatens us (LOS or rush < 3.4 tiles)!
       if (!shouldRetreat && nearestEnemy) {
         const kiteTrigger =
-          bot.brawlerId === 'vex' ? 6.2 : bot.brawlerId === 'mort' ? 4.4 : bot.brawlerId === 'blaze' ? 3.8 : 0;
-        if (kiteTrigger > 0 && nearestEnemyDist < kiteTrigger) {
+          bot.brawlerId === 'vex' ? 6.0 : bot.brawlerId === 'mort' ? 4.4 : bot.brawlerId === 'blaze' ? 3.8 : 0;
+        const enemyHasAngle =
+          nearestEnemyDist < 4.0 || hasLineOfSight(state.grid, bot, nearestEnemy);
+        if (kiteTrigger > 0 && nearestEnemyDist < kiteTrigger && enemyHasAngle) {
           const kx = bot.x - nearestEnemy.x;
           const ky = bot.y - nearestEnemy.y;
           const kd = Math.max(0.1, Math.hypot(kx, ky));
@@ -451,10 +518,16 @@ export class BotController {
         }
       }
 
-      // Active hazard avoidance (dodge enemy projectiles, acid puddles, and bombs!)
+      // Active hazard avoidance (dodge enemy projectiles, acid puddles, and bombs — takes priority over casual pathing!)
       const avoid = computeHazardAvoidance(state, bot);
-      moveX += avoid.x;
-      moveY += avoid.y;
+      const avoidMag = Math.hypot(avoid.x, avoid.y);
+      if (avoidMag > 0.25) {
+        moveX = moveX * 0.3 + avoid.x;
+        moveY = moveY * 0.3 + avoid.y;
+      } else {
+        moveX += avoid.x;
+        moveY += avoid.y;
+      }
 
       // Anti-stuck detector (only when actually far from goal and blocked on a corner, never when settled at home)
       const distToGoal = Math.hypot(goal.x - bot.x, goal.y - bot.y);
@@ -512,8 +585,11 @@ export class BotController {
         const leadPt = predictIntercept(bot, targetEnemy, cfg.attack.speed, leadAcc);
         aimAngle = Math.atan2(leadPt.y - bot.y, leadPt.x - bot.x);
 
-        // Combat strafing perpendicular to enemy when engaging (not fleeing)
-        if (!shouldRetreat && dist <= cfg.attack.range * 1.15) {
+        const hasLos = hasLineOfSight(state.grid, bot, targetEnemy);
+        const canShoot = Boolean(cfg.attack.lobbed) || hasLos;
+
+        // Combat strafing perpendicular to enemy ONLY once we have line of sight (otherwise commit cleanly to peek!)
+        if (!shouldRetreat && canShoot && dist <= cfg.attack.range * 1.15) {
           const sx = -Math.sin(aimAngle) * mem.strafeSign * 0.52;
           const sy = Math.cos(aimAngle) * mem.strafeSign * 0.52;
           // Only strafe toward walkable tile
@@ -524,9 +600,6 @@ export class BotController {
             mem.strafeSign *= -1;
           }
         }
-
-        const hasLos = hasLineOfSight(state.grid, bot, targetEnemy);
-        const canShoot = Boolean(cfg.attack.lobbed) || hasLos;
         const canBreakWallAtEnemy = Boolean(cfg.superAttack.breaksWalls) && hasBreakableWallBetween(state.grid, bot, targetEnemy);
 
         // Smart Brawler-Specific Super Casting!

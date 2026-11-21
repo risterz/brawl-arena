@@ -226,4 +226,34 @@ describe('Bot pathfinding and Gem Grab AI', () => {
     // Once settled at home, should not jitter left/right!
     expect(Math.hypot(blaze.x - settledX, blaze.y - settledY)).toBeLessThan(0.25);
   });
+
+  it('peeks sideways around the central Gem Mine to attack an enemy across mid instead of passively staring through cover', () => {
+    const slots: SlotSetup[] = [
+      { slotIndex: 0, team: 'blue', name: 'Bot-Vex', isBot: true, brawlerId: 'vex' },
+      { slotIndex: 1, team: 'red', name: 'Bot-Blaze', isBot: true, brawlerId: 'blaze' },
+    ];
+    const engine = new MatchEngine({ mapId: 'crystal-cavern', slots });
+    const vex = engine.state.brawlers[0];
+    const blaze = engine.state.brawlers[1];
+    // Stand directly across the center Gem Mine (10.5, 16.5) with 0 gems
+    vex.x = 10.5;
+    vex.y = 19.2;
+    blaze.x = 10.5;
+    blaze.y = 13.8;
+
+    const ai = new BotController();
+    let shotsFired = 0;
+    for (let i = 0; i < 50; i++) {
+      const inputs = ai.computeInputs(engine.state, 0.05);
+      engine.setInput(0, inputs.get(0)!);
+      // Keep Blaze stationary across the mine so Vex must actively peek around it!
+      engine.setInput(1, { moveX: 0, moveY: 0, aimAngle: Math.PI / 2, fire: false, superFire: false, autoAim: false });
+      const evs = engine.step(0.05);
+      for (const ev of evs) {
+        if (ev.type === 'attack' && ev.slotIndex === 0) shotsFired++;
+      }
+    }
+    expect(shotsFired).toBeGreaterThan(0);
+    expect(blaze.hp).toBeLessThan(blaze.maxHp);
+  });
 });
