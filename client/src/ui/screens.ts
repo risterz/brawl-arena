@@ -13,6 +13,10 @@ export interface HomeViewProps {
   playerName: string;
   selectedBrawler: BrawlerId;
   selectedMap: MapId;
+  sfxMuted: boolean;
+  bgmMuted: boolean;
+  onToggleSfx: () => boolean;
+  onToggleBgm: () => boolean;
   onNameChange: (name: string) => void;
   onOpenBrawlers: () => void;
   onSelectMap: (mapId: MapId) => void;
@@ -88,9 +92,13 @@ export class ScreenManager {
             <h1>BRAWL ARENA</h1>
             <span>3v3 Gem Grab • 3D Arena</span>
           </div>
-          <div class="name-box">
-            <span style="font-weight:800;font-size:13px;color:#9ec5ff;">NAME</span>
-            <input id="player-name-input" maxlength="16" value="${escapeHtml(props.playerName)}" placeholder="Your Name" />
+          <div class="action-row">
+            <button id="home-bgm-btn" class="btn btn-dark btn-sm">${props.bgmMuted ? '🔇 BGM' : '🎵 BGM'}</button>
+            <button id="home-sfx-btn" class="btn btn-dark btn-sm">${props.sfxMuted ? '🔇 SFX' : '🔊 SFX'}</button>
+            <div class="name-box">
+              <span style="font-weight:800;font-size:13px;color:#9ec5ff;">NAME</span>
+              <input id="player-name-input" maxlength="16" value="${escapeHtml(props.playerName)}" placeholder="Your Name" />
+            </div>
           </div>
         </div>
 
@@ -123,6 +131,18 @@ export class ScreenManager {
 
     const nameInput = this.container.querySelector('#player-name-input') as HTMLInputElement;
     nameInput.addEventListener('input', () => props.onNameChange(nameInput.value));
+
+    const homeBgmBtn = this.container.querySelector('#home-bgm-btn') as HTMLButtonElement;
+    homeBgmBtn.addEventListener('click', () => {
+      const muted = props.onToggleBgm();
+      homeBgmBtn.textContent = muted ? '🔇 BGM' : '🎵 BGM';
+    });
+
+    const homeSfxBtn = this.container.querySelector('#home-sfx-btn') as HTMLButtonElement;
+    homeSfxBtn.addEventListener('click', () => {
+      const muted = props.onToggleSfx();
+      homeSfxBtn.textContent = muted ? '🔇 SFX' : '🔊 SFX';
+    });
 
     this.container.querySelector('#open-brawlers-btn')!.addEventListener('click', props.onOpenBrawlers);
     this.container.querySelector('#play-solo-btn')!.addEventListener('click', props.onPlaySolo);

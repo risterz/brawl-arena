@@ -21,6 +21,13 @@ function boot(): void {
 
   const renderer = new ArenaRenderer(canvas);
   const sfx = new SfxEngine();
+  sfx.preload();
+
+  // Unlock Web Audio & start Lobby BGM smoothly on first user interaction
+  const unlockOnce = () => sfx.unlock();
+  window.addEventListener('pointerdown', unlockOnce, { passive: true });
+  window.addEventListener('keydown', unlockOnce, { passive: true });
+
   const controls = new ControlManager(controlsLayer, portraitBlocker, () => sfx.unlock());
   const screens = new ScreenManager(uiLayer, toastLayer);
 
@@ -28,16 +35,28 @@ function boot(): void {
   let playerName = localStorage.getItem('brawl_arena_name') || `Brawler${Math.floor(10 + Math.random() * 89)}`;
   let selectedBrawler: BrawlerId = 'buck';
   let selectedMap: MapId = 'crystal-cavern';
+  let activeMatchMap: MapId = 'crystal-cavern';
   let localMatch: LocalMatchController | null = null;
   let resultsShown = false;
   let lastResultsHostSlot = -2;
 
   const hud = new MatchHud(hudLayer, {
     onToggleMute: () => {
-      sfx.setMuted(!sfx.isMuted());
-      return sfx.isMuted();
+      sfx.unlock();
+      sfx.setSfxMuted(!sfx.isSfxMuted());
+      return sfx.isSfxMuted();
     },
-    onLeave: () => leaveToHome(),
+    onToggleBgm: () => {
+      sfx.unlock();
+      sfx.setBgmMuted(!sfx.isBgmMuted());
+      return sfx.isBgmMuted();
+    },
+    isSfxMuted: () => sfx.isSfxMuted(),
+    isBgmMuted: () => sfx.isBgmMuted(),
+    onLeave: () => {
+      sfx.playUiClick();
+      leaveToHome();
+    },
     onSuperReady: () => sfx.playSuperReady(),
   });
 
@@ -47,19 +66,34 @@ function boot(): void {
       resultsShown = false;
       controls.setActive(false);
       hud.hide();
+      sfx.playBgm('lobby');
       renderer.setPreviewBrawler(lobby.slots[mySlot]?.brawlerId ?? selectedBrawler);
       screens.renderLobby({
         lobby,
         mySlot,
         onPickBrawler: (id) => {
+          sfx.playUiSelect();
           selectedBrawler = id;
           online.pickBrawler(id);
         },
-        onSwitchTeam: (team) => online.switchTeam(team),
-        onPickMap: (mapId) => online.pickMap(mapId),
-        onStartMatch: () => online.startMatch(),
-        onLeave: () => leaveToHome(),
+        onSwitchTeam: (team) => {
+          sfx.playUiSelect();
+          online.switchTeam(team);
+        },
+        onPickMap: (mapId) => {
+          sfx.playUiSelect();
+          online.pickMap(mapId);
+        },
+        onStartMatch: () => {
+          sfx.playUiClick();
+          online.startMatch();
+        },
+        onLeave: () => {
+          sfx.playUiClick();
+          leaveToHome();
+        },
         onCopyInvite: (code) => {
+          sfx.playUiClick();
           const url = `${window.location.origin}/?room=${code}`;
           if (navigator.clipboard) {
             void navigator.clipboard.writeText(url);
@@ -70,11 +104,13 @@ function boot(): void {
     },
     onMatchStart: (mapId, _mySlot, _myTeam, state) => {
       mode = 'online';
+      activeMatchMap = mapId;
       resultsShown = false;
       screens.clear();
       renderer.loadMap(mapId, state.grid);
       hud.show(controls.isTouchMode());
       controls.setActive(true);
+      sfx.playBgm(mapId === 'crystal-cavern' ? 'battle' : 'battle_alt');
     },
     onEvents: (events) => {
       renderer.applyEvents(events, online.getState(), online.getMySlot());
@@ -94,18 +130,43 @@ function boot(): void {
     },
   });
 
+  function syncMatchBgm(state: MatchState): void {
+    if (state.phase === 'ended') {
+      sfx.playBgm('victory');
+    } else if (state.countdownTeam !== null || state.phase === 'sudden_death') {
+      sfx.playBgm('countdown');
+    } else {
+      sfx.playBgm(activeMatchMap === 'crystal-cavern' ? 'battle' : 'battle_alt');
+    }
+  }
+
   function showHome(): void {
     mode = 'home';
     resultsShown = false;
     localMatch = null;
     controls.setActive(false);
     hud.hide();
+    sfx.playBgm('lobby');
     renderer.setPreviewBrawler(selectedBrawler);
 
     screens.renderHome({
       playerName,
       selectedBrawler,
       selectedMap,
+      sfxMuted: sfx.isSfxMuted(),
+      bgmMuted: sfx.isBgmMuted(),
+      onToggleSfx: () => {
+        sfx.unlock();
+        sfx.setSfxMuted(!sfx.isSfxMuted());
+        if (!sfx.isSfxMuted()) sfx.playUiClick();
+        return sfx.isSfxMuted();
+      },
+      onToggleBgm: () => {
+        sfx.unlock();
+        sfx.setBgmMuted(!sfx.isBgmMuted());
+        sfx.playUiClick();
+        return sfx.isBgmMuted();
+      },
       onNameChange: (name) => {
         playerName = name;
         try {
@@ -115,25 +176,35 @@ function boot(): void {
         }
       },
       onOpenBrawlers: () => {
+        sfx.unlock();
+        sfx.playUiClick();
         screens.renderBrawlerDrawer(
           selectedBrawler,
           (id) => {
+            sfx.playUiSelect();
             selectedBrawler = id;
             showHome();
           },
           () => {
-            // drawer closed
+            sfx.playUiClick();
           },
         );
       },
       onSelectMap: (mapId) => {
+        sfx.unlock();
+        sfx.playUiSelect();
         selectedMap = mapId;
         showHome();
       },
-      onPlaySolo: () => startSoloMatch(),
+      onPlaySolo: () => {
+        sfx.unlock();
+        sfx.playUiClick();
+        startSoloMatch();
+      },
       onCreateRoom: async () => {
         try {
           sfx.unlock();
+          sfx.playUiClick();
           const code = await online.createRoom();
           online.connect(code, playerName);
         } catch {
@@ -142,6 +213,7 @@ function boot(): void {
       },
       onJoinRoom: (code) => {
         sfx.unlock();
+        sfx.playUiClick();
         online.connect(code, playerName);
       },
     });
@@ -156,6 +228,7 @@ function boot(): void {
   function startSoloMatch(): void {
     sfx.unlock();
     mode = 'solo';
+    activeMatchMap = selectedMap;
     resultsShown = false;
     screens.clear();
     localMatch = new LocalMatchController({
@@ -166,6 +239,7 @@ function boot(): void {
     renderer.loadMap(selectedMap, localMatch.getState().grid);
     hud.show(controls.isTouchMode());
     controls.setActive(true);
+    sfx.playBgm(selectedMap === 'crystal-cavern' ? 'battle' : 'battle_alt');
   }
 
   function maybeShowResults(state: MatchState, localSlot: number, isOnline: boolean): void {
@@ -176,6 +250,7 @@ function boot(): void {
     resultsShown = true;
     lastResultsHostSlot = curHostSlot;
     controls.setActive(false);
+    sfx.playBgm('victory');
     const isHost = Boolean(lobby && lobby.hostSlot === online.getMySlot());
     screens.renderResults({
       state,
@@ -183,13 +258,17 @@ function boot(): void {
       isOnline,
       isHost,
       onPlayAgain: () => {
+        sfx.playUiClick();
         if (isOnline) {
           online.returnToLobby();
         } else {
           startSoloMatch();
         }
       },
-      onHome: () => leaveToHome(),
+      onHome: () => {
+        sfx.playUiClick();
+        leaveToHome();
+      },
     });
   }
 
@@ -229,6 +308,7 @@ function boot(): void {
       renderer.syncState(state, localMatch.localSlot, dt, telegraph);
       hud.setTouchMode(controls.isTouchMode());
       hud.update(state, localMatch.localSlot, (wx, wy, h) => renderer.projectToScreen(wx, wy, h));
+      syncMatchBgm(state);
       maybeShowResults(state, localMatch.localSlot, false);
     } else if (mode === 'online') {
       const currentState = online.getState();
@@ -244,6 +324,7 @@ function boot(): void {
           renderer.syncState(state, mySlot, dt, telegraph);
           hud.setTouchMode(controls.isTouchMode());
           hud.update(state, mySlot, (wx, wy, h) => renderer.projectToScreen(wx, wy, h));
+          syncMatchBgm(state);
           maybeShowResults(state, mySlot, true);
         }
       }

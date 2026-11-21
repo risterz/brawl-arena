@@ -6,6 +6,9 @@ import {
 
 export interface HudCallbacks {
   onToggleMute: () => boolean;
+  onToggleBgm: () => boolean;
+  isSfxMuted: () => boolean;
+  isBgmMuted: () => boolean;
   onLeave: () => void;
   onSuperReady?: () => void;
 }
@@ -13,10 +16,13 @@ export interface HudCallbacks {
 export class MatchHud {
   private container: HTMLElement;
   private onSuperReady?: () => void;
+  private isSfxMuted: () => boolean;
+  private isBgmMuted: () => boolean;
   private blueScoreEl!: HTMLElement;
   private redScoreEl!: HTMLElement;
   private timerEl!: HTMLElement;
   private countdownEl!: HTMLElement;
+  private bgmBtn!: HTMLButtonElement;
   private muteBtn!: HTMLButtonElement;
   private hintEl!: HTMLElement;
   private superMeterEl!: HTMLElement;
@@ -30,6 +36,8 @@ export class MatchHud {
   constructor(container: HTMLElement, callbacks: HudCallbacks) {
     this.container = container;
     this.onSuperReady = callbacks.onSuperReady;
+    this.isSfxMuted = callbacks.isSfxMuted;
+    this.isBgmMuted = callbacks.isBgmMuted;
     this.container.innerHTML = `
       <div class="hud-top">
         <div class="gem-score blue">💎 <span id="hud-blue-gems">0</span></div>
@@ -37,6 +45,7 @@ export class MatchHud {
         <div class="gem-score red"><span id="hud-red-gems">0</span> 💎</div>
       </div>
       <div class="hud-corner-tools">
+        <button id="hud-bgm-btn" class="btn btn-dark btn-sm">🎵 BGM</button>
         <button id="hud-mute-btn" class="btn btn-dark btn-sm">🔊 SFX</button>
         <button id="hud-leave-btn" class="btn btn-red btn-sm">Leave</button>
       </div>
@@ -60,6 +69,7 @@ export class MatchHud {
     this.redScoreEl = this.container.querySelector('#hud-red-gems')!;
     this.timerEl = this.container.querySelector('#hud-timer')!;
     this.countdownEl = this.container.querySelector('#hud-countdown')!;
+    this.bgmBtn = this.container.querySelector('#hud-bgm-btn')!;
     this.muteBtn = this.container.querySelector('#hud-mute-btn')!;
     this.hintEl = this.container.querySelector('#hud-hint')!;
     this.superMeterEl = this.container.querySelector('#hud-super-meter')!;
@@ -68,9 +78,14 @@ export class MatchHud {
     this.superSubEl = this.container.querySelector('#hud-super-sub')!;
     this.barsContainer = this.container.querySelector('#hud-bars')!;
 
+    this.bgmBtn.addEventListener('click', () => {
+      const muted = callbacks.onToggleBgm();
+      this.bgmBtn.textContent = muted ? '🔇 BGM' : '🎵 BGM';
+    });
+
     this.muteBtn.addEventListener('click', () => {
       const muted = callbacks.onToggleMute();
-      this.muteBtn.textContent = muted ? '🔇 Muted' : '🔊 SFX';
+      this.muteBtn.textContent = muted ? '🔇 SFX' : '🔊 SFX';
     });
 
     this.container.querySelector('#hud-leave-btn')!.addEventListener('click', () => {
@@ -86,6 +101,8 @@ export class MatchHud {
   public show(isTouch: boolean): void {
     this.container.classList.remove('hidden');
     this.setTouchMode(isTouch);
+    this.bgmBtn.textContent = this.isBgmMuted() ? '🔇 BGM' : '🎵 BGM';
+    this.muteBtn.textContent = this.isSfxMuted() ? '🔇 SFX' : '🔊 SFX';
     this.lastSuperReady = false;
   }
 
