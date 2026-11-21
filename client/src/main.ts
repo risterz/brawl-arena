@@ -110,7 +110,7 @@ function boot(): void {
       renderer.loadMap(mapId, state.grid);
       hud.show(controls.isTouchMode());
       controls.setActive(true);
-      sfx.playBgm(mapId === 'crystal-cavern' ? 'battle' : 'battle_alt');
+      sfx.playBgm(mapId === 'crystal-cavern' ? 'battle' : mapId === 'iron-foundry' ? 'foundry' : 'battle_alt');
     },
     onEvents: (events) => {
       renderer.applyEvents(events, online.getState(), online.getMySlot());
@@ -136,7 +136,13 @@ function boot(): void {
     } else if (state.countdownTeam !== null || state.phase === 'sudden_death') {
       sfx.playBgm('countdown');
     } else {
-      sfx.playBgm(activeMatchMap === 'crystal-cavern' ? 'battle' : 'battle_alt');
+      sfx.playBgm(
+        activeMatchMap === 'crystal-cavern'
+          ? 'battle'
+          : activeMatchMap === 'iron-foundry'
+            ? 'foundry'
+            : 'battle_alt',
+      );
     }
   }
 
@@ -239,7 +245,7 @@ function boot(): void {
     renderer.loadMap(selectedMap, localMatch.getState().grid);
     hud.show(controls.isTouchMode());
     controls.setActive(true);
-    sfx.playBgm(selectedMap === 'crystal-cavern' ? 'battle' : 'battle_alt');
+    sfx.playBgm(selectedMap === 'crystal-cavern' ? 'battle' : selectedMap === 'iron-foundry' ? 'foundry' : 'battle_alt');
   }
 
   function maybeShowResults(state: MatchState, localSlot: number, isOnline: boolean): void {

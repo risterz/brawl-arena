@@ -12,6 +12,9 @@ export type ModelKey =
   | 'crate'
   | 'pillar'
   | 'bush'
+  | 'foundry_crate'
+  | 'foundry_pillar'
+  | 'foundry_bush'
   | 'gem'
   | 'gem_mine'
   | 'bullet'
@@ -32,6 +35,9 @@ export const MODEL_MANIFEST: Record<ModelKey, string> = {
   crate: '/models/crate.glb',
   pillar: '/models/pillar.glb',
   bush: '/models/bush.glb',
+  foundry_crate: '/models/foundry_crate.glb',
+  foundry_pillar: '/models/foundry_pillar.glb',
+  foundry_bush: '/models/foundry_bush.glb',
   gem: '/models/gem.glb',
   gem_mine: '/models/gem_mine.glb',
   bullet: '/models/bullet.glb',

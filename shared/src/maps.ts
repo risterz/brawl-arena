@@ -95,6 +95,26 @@ const TWIN_BRIDGES_TOP = [
 ];
 const TWIN_BRIDGES_MID_HALF = 'S..GG..B..'; // x=0..9 -> M at x=10
 
+const IRON_FOUNDRY_TOP = [
+  'SSSSSSSSSSSSSSSSSSSSS', // 0
+  'S...................S', // 1
+  'S...................S', // 2  <- Red spawn line
+  'S...................S', // 3
+  'S..S.............S..S', // 4
+  'S..S..GGG...GGG..S..S', // 5
+  'S....BBBB...BBBB....S', // 6
+  'S..WW...........WW..S', // 7  <- Molten slag flank moats
+  'S..WW...S...S...WW..S', // 8
+  'S.GGG..BB...BB..GGG.S', // 9
+  'S.GGG...........GGG.S', // 10
+  'S.....S..WWW..S.....S', // 11 <- Central magma trench + twin bridges
+  'S..BB....WWW....BB..S', // 12
+  'S..B..GGG...GGG..B..S', // 13
+  'S.....GG.....GG.....S', // 14
+  'S..S...B.....B...S..S', // 15
+];
+const IRON_FOUNDRY_MID_HALF = 'S.GGG..B..'; // x=0..9 -> M at x=10
+
 const COMMON_SPAWNS = {
   blue: [
     { x: 10.5, y: 30.5 },
@@ -129,9 +149,23 @@ export const MAPS: Record<MapId, MapDefinition> = {
     minePos: { x: 10.5, y: 16.5 },
     spawns: COMMON_SPAWNS,
   },
+  'iron-foundry': {
+    id: 'iron-foundry',
+    name: 'Iron Foundry',
+    subtitle: 'Industrial steelworks, molten lava trenches & bunker cover',
+    width: MAP_WIDTH,
+    height: MAP_HEIGHT,
+    grid: buildSymmetricGrid(IRON_FOUNDRY_TOP, IRON_FOUNDRY_MID_HALF),
+    minePos: { x: 10.5, y: 16.5 },
+    spawns: COMMON_SPAWNS,
+  },
 };
 
-export const MAP_LIST: MapDefinition[] = [MAPS['crystal-cavern'], MAPS['twin-bridges']];
+export const MAP_LIST: MapDefinition[] = [
+  MAPS['crystal-cavern'],
+  MAPS['twin-bridges'],
+  MAPS['iron-foundry'],
+];
 
 export function createGridCopy(mapId: MapId): Uint8Array {
   return new Uint8Array(MAPS[mapId].grid);

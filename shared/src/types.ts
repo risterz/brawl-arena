@@ -2,7 +2,7 @@ export type Team = 'blue' | 'red';
 
 export type BrawlerId = 'buck' | 'vex' | 'blaze' | 'golem' | 'mort' | 'lumi';
 
-export type MapId = 'crystal-cavern' | 'twin-bridges';
+export type MapId = 'crystal-cavern' | 'twin-bridges' | 'iron-foundry';
 
 export enum TileType {
   EMPTY = 0,

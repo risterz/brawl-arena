@@ -33,26 +33,91 @@ function createCheckeredGroundTexture(mapId: MapId): THREE.CanvasTexture {
   canvas.width = 256;
   canvas.height = 256;
   const ctx = canvas.getContext('2d')!;
-  const isCavern = mapId === 'crystal-cavern';
-  const c1 = isCavern ? '#e2a85a' : '#65ba49';
-  const c2 = isCavern ? '#d4994a' : '#58ab3e';
-  ctx.fillStyle = c1;
-  ctx.fillRect(0, 0, 256, 256);
-  ctx.fillStyle = c2;
-  ctx.fillRect(0, 0, 128, 128);
-  ctx.fillRect(128, 128, 128, 128);
-  // Subtle tile bevel grout for clean readability without harsh grid lines
-  ctx.strokeStyle = isCavern ? 'rgba(66, 30, 6, 0.10)' : 'rgba(14, 52, 16, 0.10)';
-  ctx.lineWidth = 4;
-  ctx.strokeRect(2, 2, 124, 124);
-  ctx.strokeRect(130, 130, 124, 124);
-  ctx.strokeRect(130, 2, 124, 124);
-  ctx.strokeRect(2, 130, 124, 124);
+
+  if (mapId === 'iron-foundry') {
+    // Realistic industrial steelworks concrete & riveted plate slabs
+    ctx.fillStyle = '#606875';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = '#535b68';
+    ctx.fillRect(0, 0, 128, 128);
+    ctx.fillRect(128, 128, 128, 128);
+
+    // Brushed steel plate grain & subtle wear
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+    for (let y = 8; y < 256; y += 16) {
+      ctx.fillRect(0, y, 256, 2);
+    }
+    // Expansion joint bevel seams
+    ctx.strokeStyle = 'rgba(18, 22, 28, 0.34)';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, 124, 124);
+    ctx.strokeRect(130, 130, 124, 124);
+    ctx.strokeRect(130, 2, 124, 124);
+    ctx.strokeRect(2, 130, 124, 124);
+
+    // Subtle corner steel plate rivets
+    ctx.fillStyle = 'rgba(24, 28, 36, 0.35)';
+    for (const bx of [0, 128]) {
+      for (const by of [0, 128]) {
+        for (const [rx, ry] of [[14, 14], [114, 14], [14, 114], [114, 114]]) {
+          ctx.beginPath();
+          ctx.arc(bx + rx, by + ry, 3.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    // Faint warm amber safety stripe accent along tile edge
+    ctx.fillStyle = 'rgba(255, 190, 48, 0.12)';
+    ctx.fillRect(12, 120, 40, 4);
+    ctx.fillRect(140, 248, 40, 4);
+  } else {
+    const isCavern = mapId === 'crystal-cavern';
+    const c1 = isCavern ? '#e2a85a' : '#65ba49';
+    const c2 = isCavern ? '#d4994a' : '#58ab3e';
+    ctx.fillStyle = c1;
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = c2;
+    ctx.fillRect(0, 0, 128, 128);
+    ctx.fillRect(128, 128, 128, 128);
+    // Subtle tile bevel grout for clean readability without harsh grid lines
+    ctx.strokeStyle = isCavern ? 'rgba(66, 30, 6, 0.10)' : 'rgba(14, 52, 16, 0.10)';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(2, 2, 124, 124);
+    ctx.strokeRect(130, 130, 124, 124);
+    ctx.strokeRect(130, 2, 124, 124);
+    ctx.strokeRect(2, 130, 124, 124);
+  }
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = THREE.RepeatWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(MAP_WIDTH / 2, MAP_HEIGHT / 2);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function createMoltenLavaTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#ff5812';
+  ctx.fillRect(0, 0, 128, 128);
+  // Bright molten magma veins
+  ctx.fillStyle = '#ffba26';
+  ctx.beginPath();
+  ctx.ellipse(36, 44, 28, 16, 0.4, 0, Math.PI * 2);
+  ctx.ellipse(92, 86, 30, 14, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  // Cooling dark basalt crust patches
+  ctx.fillStyle = 'rgba(42, 18, 14, 0.58)';
+  ctx.beginPath();
+  ctx.roundRect(12, 76, 34, 24, 8);
+  ctx.roundRect(72, 18, 38, 22, 8);
+  ctx.fill();
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
@@ -233,7 +298,9 @@ export class ArenaRenderer {
   public loadMap(mapId: MapId, grid: Uint8Array): void {
     this.mode = 'match';
     this.clearResultsStage();
-    this.scene.background = new THREE.Color(mapId === 'crystal-cavern' ? '#9e5332' : '#1b8fd1');
+    this.scene.background = new THREE.Color(
+      mapId === 'crystal-cavern' ? '#9e5332' : mapId === 'iron-foundry' ? '#2c2224' : '#1b8fd1',
+    );
     this.cameraSnapped = false;
     this.previewGroup.visible = false;
     this.mapGroup.visible = true;
@@ -303,11 +370,17 @@ export class ArenaRenderer {
     const berryMat = new THREE.MeshBasicMaterial({ color: '#ffd43b' });
     const berryGeo = new THREE.OctahedronGeometry(0.085, 0);
 
+    const isFoundry = mapId === 'iron-foundry';
     const waterGeo = new THREE.BoxGeometry(1.0, 0.18, 1.0);
-    const waterMat = new THREE.MeshToonMaterial({ color: '#26b6ff', emissive: '#083a5c' });
+    const waterMat = isFoundry
+      ? new THREE.MeshBasicMaterial({ map: createMoltenLavaTexture() })
+      : new THREE.MeshToonMaterial({ color: '#26b6ff', emissive: '#083a5c' });
 
-    const useInstancedPillars = hasModel('pillar');
-    const useInstancedBushes = hasModel('bush');
+    const crateKey = isFoundry && hasModel('foundry_crate') ? 'foundry_crate' : 'crate';
+    const pillarKey = isFoundry && hasModel('foundry_pillar') ? 'foundry_pillar' : 'pillar';
+    const bushKey = isFoundry && hasModel('foundry_bush') ? 'foundry_bush' : 'bush';
+    const useInstancedPillars = hasModel(pillarKey);
+    const useInstancedBushes = hasModel(bushKey);
     const pillarMatrices: THREE.Matrix4[] = [];
     const bushMatrices: THREE.Matrix4[] = [];
     const tmpPos = new THREE.Vector3();
@@ -322,7 +395,7 @@ export class ArenaRenderer {
         const cz = ty + 0.5;
 
         if (tile === TileType.WALL_BREAKABLE) {
-          const glbCrate = cloneModel('crate');
+          const glbCrate = cloneModel(crateKey);
           let grp: THREE.Group;
           if (glbCrate) {
             grp = glbCrate;
@@ -500,11 +573,11 @@ export class ArenaRenderer {
 
     // Add batched GPU-instanced pillars & thick bushes (cuts >2,000 draw calls down to <20!)
     if (pillarMatrices.length > 0) {
-      const pillarBatch = createInstancedGlbBatch('pillar', pillarMatrices, false);
+      const pillarBatch = createInstancedGlbBatch(pillarKey, pillarMatrices, false);
       if (pillarBatch) this.mapGroup.add(pillarBatch);
     }
     if (bushMatrices.length > 0) {
-      const bushBatch = createInstancedGlbBatch('bush', bushMatrices, false);
+      const bushBatch = createInstancedGlbBatch(bushKey, bushMatrices, false);
       if (bushBatch) this.mapGroup.add(bushBatch);
     }
   }

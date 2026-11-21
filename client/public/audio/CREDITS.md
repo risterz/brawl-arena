@@ -9,6 +9,8 @@ All background music (BGM) and sound effects (SFX) in `client/public/audio/` are
   - Source: https://opengameart.org/content/5-chiptunes-action
 - `bgm_battle_alt.mp3` — *Level 2* from **5 Chiptunes (Action)** by Juhani Junkala (CC0)
   - Source: https://opengameart.org/content/5-chiptunes-action
+- `bgm_foundry.mp3` — *Level 3* from **5 Chiptunes (Action)** by Juhani Junkala (CC0)
+  - Source: https://opengameart.org/content/5-chiptunes-action
 - `bgm_countdown.mp3` — *Boss Fight* from **4 Chiptunes (Adventure)** by Juhani Junkala (CC0)
   - Source: https://opengameart.org/content/4-chiptunes-adventure
 - `bgm_victory.mp3` — *Ending* from **5 Chiptunes (Action)** by Juhani Junkala (CC0)

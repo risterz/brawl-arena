@@ -56,9 +56,9 @@ describe('Sculpted 3D projectile, bomb, crystal, flame, and heal meshes', () => 
     expect(crossGeo.attributes.position.count).toBeGreaterThan(20);
   });
 
-  it('has all 18 Blender GLB models present in client/public/models and isolates cloned materials when requested', () => {
+  it('has all 21 Blender GLB models present in client/public/models and isolates cloned materials when requested', () => {
     const keys = Object.keys(MODEL_MANIFEST) as ModelKey[];
-    expect(keys).toHaveLength(18);
+    expect(keys).toHaveLength(21);
     const modelsDir = path.resolve(__dirname, '../public/models');
     for (const k of keys) {
       const rel = MODEL_MANIFEST[k].replace(/^\/models\//, '');

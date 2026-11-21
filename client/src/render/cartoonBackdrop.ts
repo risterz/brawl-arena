@@ -130,7 +130,34 @@ function createCartoonSurroundTexture(mapId: MapId): THREE.CanvasTexture {
   canvas.height = 256;
   const ctx = canvas.getContext('2d')!;
 
-  if (mapId === 'crystal-cavern') {
+  if (mapId === 'iron-foundry') {
+    // Dark weathered volcanic basalt with glowing flowing molten slag channels!
+    ctx.fillStyle = '#2d262b';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = '#382f35';
+    for (let y = 0; y < 256; y += 64) {
+      for (let x = 0; x < 256; x += 64) {
+        if (((x / 64) + (y / 64)) % 2 === 0) {
+          ctx.fillRect(x, y, 64, 64);
+        }
+      }
+    }
+    // Glowing molten magma rivers threading through foundry floor
+    ctx.fillStyle = '#e84810';
+    for (let y = 26; y < 256; y += 64) {
+      ctx.beginPath();
+      ctx.roundRect(0, y, 256, 16, 4);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#ffae24';
+    for (let y = 31; y < 256; y += 64) {
+      for (let x = (y % 128 === 31 ? 10 : 48); x < 256; x += 82) {
+        ctx.beginPath();
+        ctx.roundRect(x, y, 36, 6, 3);
+        ctx.fill();
+      }
+    }
+  } else if (mapId === 'crystal-cavern') {
     // Warm stylized terracotta canyon floor outside the desert cavern arena
     ctx.fillStyle = '#b96942';
     ctx.fillRect(0, 0, 256, 256);
@@ -511,8 +538,10 @@ export function buildMatchSurround(mapId: MapId): MatchSurroundHandle {
   surround.position.set(MAP_WIDTH / 2, -0.08, MAP_HEIGHT / 2);
   group.add(surround);
 
-  // Raised stone stadium curb framing the arena walls cleanly
-  const curbMat = new THREE.MeshToonMaterial({ color: mapId === 'crystal-cavern' ? 0x6e4736 : 0x3b6e52 });
+  // Raised stone/steel stadium curb framing the arena walls cleanly
+  const curbMat = new THREE.MeshToonMaterial({
+    color: mapId === 'crystal-cavern' ? 0x6e4736 : mapId === 'iron-foundry' ? 0x353c48 : 0x3b6e52,
+  });
   const curbTop = new THREE.Mesh(new THREE.BoxGeometry(MAP_WIDTH + 2.4, 0.28, 1.2), curbMat);
   curbTop.position.set(MAP_WIDTH / 2, -0.02, -0.6);
   group.add(curbTop);
@@ -526,10 +555,9 @@ export function buildMatchSurround(mapId: MapId): MatchSurroundHandle {
   curbRight.position.set(MAP_WIDTH + 0.6, -0.02, MAP_HEIGHT / 2);
   group.add(curbRight);
 
-  // Decorative outer canyon mesas / rocky islands & glowing crystals around perimeter
+  // Decorative outer scenery: mesas/crystals OR industrial foundry smokestacks, furnace vats & rising embers!
   const outerSway: Array<{ obj: THREE.Object3D; phase: number }> = [];
-  const rockMat = new THREE.MeshToonMaterial({ color: mapId === 'crystal-cavern' ? 0xc97343 : 0x4ba859 });
-  const rockCapMat = new THREE.MeshToonMaterial({ color: mapId === 'crystal-cavern' ? 0xeba564 : 0x70d669 });
+  const embers: Array<{ mesh: THREE.Mesh; speed: number; baseX: number; baseZ: number; phase: number }> = [];
 
   const decorSpots: Array<[number, number, number]> = [
     [-4.5, 4, 1.5], [-5.2, 12, 1.9], [-4.2, 21, 1.6], [-5.0, 29, 1.8],
@@ -538,44 +566,105 @@ export function buildMatchSurround(mapId: MapId): MatchSurroundHandle {
     [4, MAP_HEIGHT + 4.5, 1.6], [10.5, MAP_HEIGHT + 5.2, 2.0], [17, MAP_HEIGHT + 4.5, 1.6],
   ];
 
-  for (let i = 0; i < decorSpots.length; i++) {
-    const [dx, dz, sc] = decorSpots[i];
-    const mound = new THREE.Mesh(new THREE.CylinderGeometry(sc * 0.72, sc, sc * 0.85, 7), rockMat);
-    mound.position.set(dx, sc * 0.34, dz);
-    mound.rotation.y = i * 0.7;
-    group.add(mound);
+  if (mapId === 'iron-foundry') {
+    const steelDark = new THREE.MeshToonMaterial({ color: 0x2c323d });
+    const steelMid = new THREE.MeshToonMaterial({ color: 0x4b5463 });
+    const hazardMat = new THREE.MeshToonMaterial({ color: 0xf7b91e });
+    const lavaGlow = new THREE.MeshBasicMaterial({ color: 0xff6a1a });
+    const emberMat = new THREE.MeshBasicMaterial({ color: 0xffae2b });
+    const emberGeo = new THREE.OctahedronGeometry(0.11, 0);
 
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(sc * 0.68, sc * 0.75, 0.22, 7), rockCapMat);
-    cap.position.set(dx, sc * 0.78, dz);
-    cap.rotation.y = i * 0.7;
-    group.add(cap);
+    for (let i = 0; i < decorSpots.length; i++) {
+      const [dx, dz, sc] = decorSpots[i];
+      // Industrial concrete & steel foundation pad
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(sc * 0.9, sc * 1.05, 0.75, 8), steelDark);
+      pad.position.set(dx, 0.3, dz);
+      group.add(pad);
 
-    if (i % 2 === 0) {
-      const crystal = createCrystalCluster(
-        mapId === 'crystal-cavern' ? 0xd956ff : 0x46e6ff,
-        mapId === 'crystal-cavern' ? 0x620ea8 : 0x0a6c9e,
-        0.95,
-      );
-      crystal.position.set(dx + (i % 3 === 0 ? 0.4 : -0.4), sc * 0.82, dz);
-      group.add(crystal);
-    } else {
-      const bush = createCartoonBushProp(1.05);
-      bush.position.set(dx, sc * 0.82, dz);
-      group.add(bush);
-      outerSway.push({ obj: bush, phase: i * 0.9 });
+      if (i % 2 === 0) {
+        // Tall industrial smokestack chimney with hazard warning ring & glowing furnace mouth
+        const stack = new THREE.Mesh(new THREE.CylinderGeometry(sc * 0.36, sc * 0.52, sc * 2.4, 12), steelMid);
+        stack.position.set(dx, 0.65 + sc * 1.15, dz);
+        group.add(stack);
+        const band = new THREE.Mesh(new THREE.CylinderGeometry(sc * 0.44, sc * 0.46, 0.35, 12), hazardMat);
+        band.position.set(dx, 0.65 + sc * 1.6, dz);
+        group.add(band);
+        const furnaceGlow = new THREE.Mesh(new THREE.CylinderGeometry(sc * 0.32, sc * 0.32, 0.14, 12), lavaGlow);
+        furnaceGlow.position.set(dx, 0.65 + sc * 2.34, dz);
+        group.add(furnaceGlow);
+      } else {
+        // Glowing molten slag smelter vat
+        const vat = new THREE.Mesh(new THREE.CylinderGeometry(sc * 0.72, sc * 0.78, 1.1, 12), steelMid);
+        vat.position.set(dx, 0.9, dz);
+        group.add(vat);
+        const pool = new THREE.Mesh(new THREE.CylinderGeometry(sc * 0.62, sc * 0.62, 0.12, 12), lavaGlow);
+        pool.position.set(dx, 1.44, dz);
+        group.add(pool);
+      }
+
+      // Spawn 2 rising glowing embers per outer foundry station
+      for (let e = 0; e < 2; e++) {
+        const em = new THREE.Mesh(emberGeo, emberMat);
+        const ex = dx + (e === 0 ? -0.6 : 0.6);
+        const ez = dz + (e === 0 ? 0.5 : -0.5);
+        em.position.set(ex, 1.2 + ((i * 1.3 + e * 2.1) % 4.5), ez);
+        group.add(em);
+        embers.push({ mesh: em, speed: 0.9 + ((i + e) % 3) * 0.35, baseX: ex, baseZ: ez, phase: i * 0.8 + e * 1.7 });
+      }
+    }
+  } else {
+    const rockMat = new THREE.MeshToonMaterial({ color: mapId === 'crystal-cavern' ? 0xc97343 : 0x4ba859 });
+    const rockCapMat = new THREE.MeshToonMaterial({ color: mapId === 'crystal-cavern' ? 0xeba564 : 0x70d669 });
+
+    for (let i = 0; i < decorSpots.length; i++) {
+      const [dx, dz, sc] = decorSpots[i];
+      const mound = new THREE.Mesh(new THREE.CylinderGeometry(sc * 0.72, sc, sc * 0.85, 7), rockMat);
+      mound.position.set(dx, sc * 0.34, dz);
+      mound.rotation.y = i * 0.7;
+      group.add(mound);
+
+      const cap = new THREE.Mesh(new THREE.CylinderGeometry(sc * 0.68, sc * 0.75, 0.22, 7), rockCapMat);
+      cap.position.set(dx, sc * 0.78, dz);
+      cap.rotation.y = i * 0.7;
+      group.add(cap);
+
+      if (i % 2 === 0) {
+        const crystal = createCrystalCluster(
+          mapId === 'crystal-cavern' ? 0xd956ff : 0x46e6ff,
+          mapId === 'crystal-cavern' ? 0x620ea8 : 0x0a6c9e,
+          0.95,
+        );
+        crystal.position.set(dx + (i % 3 === 0 ? 0.4 : -0.4), sc * 0.82, dz);
+        group.add(crystal);
+      } else {
+        const bush = createCartoonBushProp(1.05);
+        bush.position.set(dx, sc * 0.82, dz);
+        group.add(bush);
+        outerSway.push({ obj: bush, phase: i * 0.9 });
+      }
     }
   }
 
   return {
     group,
     update(clock: number, dt: number) {
-      // Gently animate flowing cartoon river water on Twin Bridges!
+      // Gently animate flowing cartoon river water on Twin Bridges or molten slag on Iron Foundry!
       if (mapId === 'twin-bridges') {
         surroundTex.offset.x = (surroundTex.offset.x + dt * 0.16) % 1;
         surroundTex.offset.y = Math.sin(clock * 0.7) * 0.04;
+      } else if (mapId === 'iron-foundry') {
+        surroundTex.offset.x = (surroundTex.offset.x + dt * 0.08) % 1;
       }
       for (const b of outerSway) {
         b.obj.rotation.z = Math.sin(clock * 2.0 + b.phase) * 0.035;
+      }
+      for (const em of embers) {
+        em.mesh.position.y += em.speed * dt;
+        em.mesh.position.x = em.baseX + Math.sin(clock * 2.2 + em.phase) * 0.35;
+        em.mesh.rotation.y = clock * 2.5 + em.phase;
+        if (em.mesh.position.y > 5.8) {
+          em.mesh.position.y = 1.0;
+        }
       }
     },
   };

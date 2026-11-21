@@ -1,6 +1,6 @@
 import { MatchEvent } from '@brawl-arena/shared';
 
-export type BgmTrack = 'lobby' | 'battle' | 'battle_alt' | 'countdown' | 'victory';
+export type BgmTrack = 'lobby' | 'battle' | 'battle_alt' | 'foundry' | 'countdown' | 'victory';
 
 export type SfxKey =
   | 'buck'
@@ -25,6 +25,7 @@ const BGM_URLS: Record<BgmTrack, string> = {
   lobby: '/audio/bgm_lobby.mp3',
   battle: '/audio/bgm_battle.mp3',
   battle_alt: '/audio/bgm_battle_alt.mp3',
+  foundry: '/audio/bgm_foundry.mp3',
   countdown: '/audio/bgm_countdown.mp3',
   victory: '/audio/bgm_victory.mp3',
 };
