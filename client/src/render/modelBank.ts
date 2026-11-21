@@ -78,11 +78,17 @@ export function applyCartoonColorCorrection(root: THREE.Object3D): void {
             Math.pow(Math.max(0, mat.emissive.b), GAMMA),
           );
         }
-        // Keep cartoon surfaces crisp without muddy metallic blackouts (no envMap)
+        // Keep cartoon surfaces crisp without muddy metallic blackouts (no envMap),
+        // while preserving glossy transparent glass shells (e.g. Mort's acid tank/flask).
         if (mat.metalness > 0.28) {
           mat.metalness = Math.min(0.28, mat.metalness * 0.32);
         }
-        mat.roughness = Math.max(0.42, Math.min(0.85, mat.roughness));
+        if (mat.transparent && mat.opacity < 0.95) {
+          mat.roughness = Math.min(0.22, mat.roughness);
+          mat.depthWrite = false;
+        } else {
+          mat.roughness = Math.max(0.42, Math.min(0.85, mat.roughness));
+        }
       }
     }
   });
