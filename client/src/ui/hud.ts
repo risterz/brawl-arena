@@ -1,8 +1,18 @@
 import {
   isBrawlerVisibleToTeam,
+  MatchEvent,
   MatchState,
   Team,
 } from '@brawl-arena/shared';
+import { CombatFeedTracker } from './combatFeed';
+
+function escapeHtml(text: string): string {
+  return text
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
 
 export interface HudCallbacks {
   onToggleMute: () => boolean;
@@ -35,7 +45,14 @@ export class MatchHud {
   private tackleValEl!: HTMLElement;
   private tackleSubEl!: HTMLElement;
   private barsContainer!: HTMLDivElement;
+  private floatersContainer!: HTMLDivElement;
+  private killFeedEl!: HTMLDivElement;
+  private announcerEl!: HTMLDivElement;
   private barNodes: Map<number, HTMLDivElement> = new Map();
+  private floaterNodes: Map<number, HTMLDivElement> = new Map();
+  private combatFeed = new CombatFeedTracker();
+  private lastFeedSig = '';
+  private lastBannerId = -1;
   private lastSuperReady = false;
   private isTouch = false;
 
@@ -56,7 +73,10 @@ export class MatchHud {
         <button id="hud-leave-btn" class="btn btn-red btn-sm">Leave</button>
       </div>
       <div id="hud-countdown" class="countdown-banner hidden"></div>
+      <div id="hud-announcer" class="announcer-banner hidden"></div>
+      <div id="hud-killfeed" class="hud-killfeed"></div>
       <div id="hud-bars"></div>
+      <div id="hud-floaters" class="hud-floaters"></div>
       <div id="hud-tackle-meter" class="tackle-meter hidden">
         <div class="tackle-icon">💨</div>
         <div id="hud-tackle-val" class="tackle-val">TACKLE</div>
@@ -93,6 +113,9 @@ export class MatchHud {
     this.tackleValEl = this.container.querySelector('#hud-tackle-val')!;
     this.tackleSubEl = this.container.querySelector('#hud-tackle-sub')!;
     this.barsContainer = this.container.querySelector('#hud-bars')!;
+    this.floatersContainer = this.container.querySelector('#hud-floaters')!;
+    this.killFeedEl = this.container.querySelector('#hud-killfeed')!;
+    this.announcerEl = this.container.querySelector('#hud-announcer')!;
 
     this.bgmBtn.addEventListener('click', () => {
       const muted = callbacks.onToggleBgm();
@@ -124,6 +147,7 @@ export class MatchHud {
     this.bgmBtn.textContent = this.isBgmMuted() ? '🔇 BGM' : '🎵 BGM';
     this.muteBtn.textContent = this.isSfxMuted() ? '🔇 SFX' : '🔊 SFX';
     this.lastSuperReady = false;
+    this.resetCombatFeed();
   }
 
   public hide(): void {
@@ -131,13 +155,30 @@ export class MatchHud {
     this.barsContainer.innerHTML = '';
     this.barNodes.clear();
     this.lastSuperReady = false;
+    this.resetCombatFeed();
+  }
+
+  private resetCombatFeed(): void {
+    this.combatFeed.clear();
+    this.floatersContainer.innerHTML = '';
+    this.floaterNodes.clear();
+    this.killFeedEl.innerHTML = '';
+    this.announcerEl.classList.add('hidden');
+    this.lastFeedSig = '';
+    this.lastBannerId = -1;
+  }
+
+  public ingestEvents(events: MatchEvent[], state: MatchState | null, localSlot: number): void {
+    this.combatFeed.ingest(events, state, localSlot);
   }
 
   public update(
     state: MatchState,
     localSlot: number,
+    dt: number,
     project: (wx: number, wy: number, heightY: number) => { x: number; y: number; visible: boolean },
   ): void {
+    this.combatFeed.update(dt);
     const isBall = state.mode === 'brawl-ball';
     const scoreIcon = isBall ? '⚽' : '💎';
     if (this.blueIconEl.textContent !== scoreIcon) {
@@ -270,10 +311,88 @@ export class MatchHud {
 
       node.innerHTML = `
         ${gemHtml}
-        <div class="overhead-name">${b.name}</div>
+        <div class="overhead-name">${escapeHtml(b.name)}</div>
         <div class="hp-track"><div class="hp-fill" style="width:${hpPct.toFixed(0)}%;background:${hpColor}"></div></div>
         ${ammoHtml}
       `;
+    }
+
+    // Render rising floating damage/heal/steal numbers projected from 3D world coords
+    const popups = this.combatFeed.getPopups();
+    const activePopupIds = new Set<number>();
+    for (const p of popups) {
+      activePopupIds.add(p.id);
+      let el = this.floaterNodes.get(p.id);
+      if (!el) {
+        el = document.createElement('div');
+        el.className = `float-num ${p.kind} ${p.isCrit ? 'crit' : ''}`;
+        el.textContent = p.text;
+        this.floatersContainer.appendChild(el);
+        this.floaterNodes.set(p.id, el);
+      }
+      const screen = project(p.wx, p.wy, p.heightY);
+      if (!screen.visible) {
+        el.style.display = 'none';
+        continue;
+      }
+      const progress = Math.min(1, p.age / Math.max(0.05, p.duration));
+      const opacity = progress < 0.65 ? 1 : Math.max(0, 1 - (progress - 0.65) / 0.35);
+      const popScale = progress < 0.16 ? 0.72 + (progress / 0.16) * 0.44 : 1.16 - Math.min(0.18, (progress - 0.16) * 0.25);
+      el.style.display = 'block';
+      el.style.left = `${screen.x.toFixed(1)}px`;
+      el.style.top = `${screen.y.toFixed(1)}px`;
+      el.style.opacity = opacity.toFixed(2);
+      el.style.transform = `translate(-50%, -50%) scale(${popScale.toFixed(2)})`;
+    }
+    for (const [id, el] of this.floaterNodes) {
+      if (!activePopupIds.has(id)) {
+        el.remove();
+        this.floaterNodes.delete(id);
+      }
+    }
+
+    // Render top-right kill feed ticker
+    const feed = this.combatFeed.getFeed();
+    const feedSig = feed.map((f) => f.id).join(',');
+    if (feedSig !== this.lastFeedSig) {
+      this.lastFeedSig = feedSig;
+      this.killFeedEl.innerHTML = feed
+        .map((f) => {
+          const kClass = f.killerTeam === 'blue' ? 'blue' : f.killerTeam === 'red' ? 'red' : 'neutral';
+          const vClass = f.victimTeam === 'blue' ? 'blue' : 'red';
+          const hl = f.killerIsLocal ? 'my-kill' : f.victimIsLocal ? 'my-death' : '';
+          return `
+            <div class="killfeed-row ${hl}">
+              <span class="kf-name ${kClass}">${escapeHtml(f.killerName)}</span>
+              <span class="kf-icon">☠️</span>
+              <span class="kf-name ${vClass}">${escapeHtml(f.victimName)}</span>
+            </div>
+          `;
+        })
+        .join('');
+    }
+
+    // Render DOUBLE KILL / TRIPLE KILL / TEAM WIPE announcer banner
+    const banner = this.combatFeed.getBanner();
+    const countdownVisible = !this.countdownEl.classList.contains('hidden');
+    if (banner) {
+      this.announcerEl.classList.remove('hidden', 'blue', 'red', 'gold', 'offset-low');
+      this.announcerEl.classList.add(banner.accent);
+      if (countdownVisible) this.announcerEl.classList.add('offset-low');
+      if (banner.id !== this.lastBannerId) {
+        this.lastBannerId = banner.id;
+        this.announcerEl.innerHTML = `
+          <div class="announcer-title">${escapeHtml(banner.title)}</div>
+          <div class="announcer-sub">${escapeHtml(banner.subtitle)}</div>
+        `;
+        // Retrigger pop-in animation cleanly
+        this.announcerEl.classList.remove('pop');
+        void this.announcerEl.offsetWidth;
+        this.announcerEl.classList.add('pop');
+      }
+    } else if (this.lastBannerId !== -1) {
+      this.lastBannerId = -1;
+      this.announcerEl.classList.add('hidden');
     }
   }
 }

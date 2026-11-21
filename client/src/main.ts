@@ -139,7 +139,10 @@ function boot(): void {
       sfx.playBgm(mapId === 'crystal-cavern' ? 'battle' : mapId === 'iron-foundry' ? 'foundry' : 'battle_alt');
     },
     onEvents: (events) => {
-      renderer.applyEvents(events, online.getState(), online.getMySlot());
+      const curState = online.getState();
+      const mySlot = online.getMySlot();
+      renderer.applyEvents(events, curState, mySlot);
+      hud.ingestEvents(events, curState, mySlot);
       for (const ev of events) sfx.playEvent(ev);
     },
     onError: (message) => {
@@ -375,10 +378,11 @@ function boot(): void {
       );
       const events = localMatch.tick(dt, input);
       renderer.applyEvents(events, state, localMatch.localSlot);
+      hud.ingestEvents(events, state, localMatch.localSlot);
       for (const ev of events) sfx.playEvent(ev);
       renderer.syncState(state, localMatch.localSlot, dt, telegraph);
       hud.setTouchMode(controls.isTouchMode());
-      hud.update(state, localMatch.localSlot, (wx, wy, h) => renderer.projectToScreen(wx, wy, h));
+      hud.update(state, localMatch.localSlot, dt, (wx, wy, h) => renderer.projectToScreen(wx, wy, h));
       syncMatchBgm(state);
       maybeShowResults(state, localMatch.localSlot, false);
     } else if (mode === 'online') {
@@ -394,7 +398,7 @@ function boot(): void {
         if (state) {
           renderer.syncState(state, mySlot, dt, telegraph);
           hud.setTouchMode(controls.isTouchMode());
-          hud.update(state, mySlot, (wx, wy, h) => renderer.projectToScreen(wx, wy, h));
+          hud.update(state, mySlot, dt, (wx, wy, h) => renderer.projectToScreen(wx, wy, h));
           syncMatchBgm(state);
           maybeShowResults(state, mySlot, true);
         }

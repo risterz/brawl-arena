@@ -537,6 +537,178 @@ body,
   color: #0b1326;
 }
 
+/* Floating Damage / Heal / Steal Numbers */
+.hud-floaters {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 6;
+}
+
+.float-num {
+  position: fixed;
+  font-family: 'Fredoka', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow:
+    -2px -2px 0 #0b1326,
+     2px -2px 0 #0b1326,
+    -2px  2px 0 #0b1326,
+     2px  2px 0 #0b1326,
+     0    4px 0 rgba(0, 0, 0, 0.55);
+  will-change: transform, opacity, left, top;
+}
+
+.float-num.dmg-dealt {
+  color: #ffe047;
+  font-size: 20px;
+}
+
+.float-num.dmg-dealt.crit {
+  color: #ff9f1c;
+  font-size: 27px;
+}
+
+.float-num.dmg-taken {
+  color: #ff5468;
+  font-size: 19px;
+}
+
+.float-num.dmg-other {
+  color: #f0f6ff;
+  font-size: 16px;
+}
+
+.float-num.heal {
+  color: #42f58d;
+  font-size: 19px;
+}
+
+.float-num.steal {
+  color: #56f0ff;
+  font-size: 22px;
+}
+
+/* Top-Right Kill Feed Ticker */
+.hud-killfeed {
+  position: fixed;
+  top: 52px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  pointer-events: none;
+  z-index: 8;
+}
+
+.killfeed-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: rgba(11, 19, 38, 0.82);
+  border: 2px solid #0b1326;
+  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+  font-weight: 900;
+  animation: kf-slide-in 0.2s ease-out;
+}
+
+.killfeed-row.my-kill {
+  border-color: #ffd43b;
+  background: rgba(34, 42, 74, 0.92);
+}
+
+.killfeed-row.my-death {
+  border-color: #ff4757;
+}
+
+.kf-name.blue {
+  color: #54c7ff;
+}
+
+.kf-name.red {
+  color: #ff6b7a;
+}
+
+.kf-name.neutral {
+  color: #ffd43b;
+}
+
+.kf-icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+@keyframes kf-slide-in {
+  from { opacity: 0; transform: translateX(22px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* DOUBLE KILL / TRIPLE KILL / TEAM WIPE Announcer Banner */
+.announcer-banner {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 7px 24px 8px;
+  border-radius: 16px;
+  border: 3px solid #0b1326;
+  text-align: center;
+  pointer-events: none;
+  z-index: 9;
+  box-shadow: 0 6px 0 #0b1326, 0 0 24px rgba(0, 0, 0, 0.45);
+}
+
+.announcer-banner.offset-low {
+  top: 118px;
+}
+
+.announcer-banner.blue {
+  background: linear-gradient(135deg, #29a8ff, #1665d8);
+  color: #fff;
+}
+
+.announcer-banner.red {
+  background: linear-gradient(135deg, #ff4757, #c92038);
+  color: #fff;
+}
+
+.announcer-banner.gold {
+  background: linear-gradient(135deg, #ffe047, #ff8811);
+  color: #0b1326;
+}
+
+.announcer-banner.pop {
+  animation: announcer-pop 0.32s cubic-bezier(0.2, 1.35, 0.45, 1);
+}
+
+.announcer-title {
+  font-family: 'Fredoka', sans-serif;
+  font-size: 24px;
+  letter-spacing: 0.8px;
+  line-height: 1.05;
+}
+
+.announcer-sub {
+  font-size: 12px;
+  font-weight: 900;
+  opacity: 0.92;
+  margin-top: 2px;
+}
+
+@keyframes announcer-pop {
+  0% { opacity: 0; transform: translateX(-50%) scale(0.55); }
+  70% { opacity: 1; transform: translateX(-50%) scale(1.09); }
+  100% { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
 .mode-chip.active {
   background: linear-gradient(135deg, #2ecc71, #19a957);
   border-color: #ffd43b;
