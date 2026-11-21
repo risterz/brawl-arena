@@ -54,9 +54,9 @@ const SFX_GAIN: Partial<Record<SfxKey, number>> = {
   buck: 0.42,
   vex: 0.38,
   blaze: 0.30,
-  golem: 0.48,
-  mort: 0.40,
-  lumi: 0.36,
+  golem: 0.44,
+  mort: 0.26,
+  lumi: 0.34,
   super_cast: 0.50,
   super_ready: 0.46,
   hit: 0.24,
@@ -297,7 +297,7 @@ export class SfxEngine {
       if (event.isSuper) {
         this.playSfx('super_cast', 0.04, 60);
       }
-      this.playSfx(event.brawlerId, 0.06, 45);
+      this.playSfx(event.brawlerId, 0.06, event.brawlerId === 'mort' ? 95 : 45);
     } else if (event.type === 'hit') {
       this.playSfx('hit', 0.08, 45);
     } else if (event.type === 'heal') {
