@@ -1,5 +1,5 @@
 import { BRAWLERS } from './brawlers';
-import { getTile, isTileBlockingMovement, isTileBlockingProjectile } from './collision';
+import { findBlockingWallForCircle, getTile, isTileBlockingMovement } from './collision';
 import { isBrawlerVisibleToTeam } from './combat';
 import { MAPS } from './maps';
 import { findNextWaypoint } from './pathfinding';
@@ -25,12 +25,12 @@ function hasLineOfSight(grid: Uint8Array, from: Vec2, to: Vec2): boolean {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const dist = Math.hypot(dx, dy);
-  const steps = Math.max(1, Math.ceil(dist / 0.42));
+  const steps = Math.max(1, Math.ceil(dist / 0.22));
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
-    const tx = Math.floor(from.x + dx * t);
-    const ty = Math.floor(from.y + dy * t);
-    if (isTileBlockingProjectile(getTile(grid, tx, ty))) {
+    const px = from.x + dx * t;
+    const py = from.y + dy * t;
+    if (findBlockingWallForCircle(grid, px, py, 0.16) !== null) {
       return false;
     }
   }

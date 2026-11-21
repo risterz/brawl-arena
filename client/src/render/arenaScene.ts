@@ -908,8 +908,8 @@ export class ArenaRenderer {
       this.ballRoot.visible = false;
     }
 
-    // Update VFX + aim telegraph
-    this.vfx.updateTelegraph(telegraph);
+    // Update VFX + wall-clipped aim telegraph
+    this.vfx.updateTelegraph(telegraph, state.grid);
     this.vfx.sync(state, dt);
 
     // Smooth camera follow with immediate snap on match start (no Red-side sweep)

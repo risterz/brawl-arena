@@ -186,4 +186,39 @@ describe('Gem Grab rules, combat, stealth, and protocol', () => {
     expect(buck.revealedTimer).toBe(0);
     expect(engine.state.projectiles).toHaveLength(0);
   });
+
+  it('blocks fast sniper shots from tunneling or squeezing diagonally through L-shaped cover crates', () => {
+    const engine = new MatchEngine({ mapId: 'crystal-cavern', slots: defaultSixSlots() });
+    const vex = engine.state.brawlers[1];
+    const blaze = engine.state.brawlers[3];
+    // Crystal Cavern has L-shaped breakable crates at (6, 19), (6, 20), (7, 20)
+    vex.x = 9.8;
+    vex.y = 21.8;
+    blaze.x = 3.6;
+    blaze.y = 17.6;
+    const hpBefore = blaze.hp;
+
+    // Move other enemies out of the line of fire
+    engine.state.brawlers[4].x = 18.5;
+    engine.state.brawlers[4].y = 2.5;
+    engine.state.brawlers[5].x = 18.5;
+    engine.state.brawlers[5].y = 2.5;
+
+    const angle = Math.atan2(blaze.y - vex.y, blaze.x - vex.x);
+    engine.setInput(1, {
+      moveX: 0,
+      moveY: 0,
+      aimAngle: angle,
+      fire: true,
+      superFire: false,
+      autoAim: false,
+    });
+    engine.step(0.05);
+    engine.setInput(1, { moveX: 0, moveY: 0, aimAngle: angle, fire: false, superFire: false, autoAim: false });
+    for (let i = 0; i < 15; i++) {
+      engine.step(0.05);
+    }
+    expect(blaze.hp).toBe(hpBefore);
+    expect(engine.state.projectiles).toHaveLength(0);
+  });
 });

@@ -27,6 +27,62 @@ export function isTileBlockingProjectile(tile: TileType): boolean {
   return tile === TileType.WALL_BREAKABLE || tile === TileType.WALL_SOLID || tile === TileType.GEM_MINE;
 }
 
+/**
+ * Checks whether a circle at (x, y) with given radius overlaps any projectile-blocking tile.
+ * Prevents fast shots from grazing through crates or squeezing diagonally between corner-touching walls.
+ */
+export function findBlockingWallForCircle(
+  grid: Uint8Array,
+  x: number,
+  y: number,
+  radius: number,
+): TileType | null {
+  const rSq = radius * radius;
+  const minTx = Math.floor(x - radius);
+  const maxTx = Math.floor(x + radius);
+  const minTy = Math.floor(y - radius);
+  const maxTy = Math.floor(y + radius);
+
+  let hitBreakable = false;
+  for (let ty = minTy; ty <= maxTy; ty++) {
+    for (let tx = minTx; tx <= maxTx; tx++) {
+      const tile = getTile(grid, tx, ty);
+      if (!isTileBlockingProjectile(tile)) continue;
+      const cx = Math.max(tx, Math.min(x, tx + 1));
+      const cy = Math.max(ty, Math.min(y, ty + 1));
+      const dx = x - cx;
+      const dy = y - cy;
+      if (dx * dx + dy * dy <= rSq) {
+        if (tile !== TileType.WALL_BREAKABLE) return tile;
+        hitBreakable = true;
+      }
+    }
+  }
+  return hitBreakable ? TileType.WALL_BREAKABLE : null;
+}
+
+/** Casts a circle-sweep ray from (x, y) along angle up to maxRange, returning hit distance against walls. */
+export function raycastWallDistance(
+  grid: Uint8Array,
+  x: number,
+  y: number,
+  angle: number,
+  maxRange: number,
+  radius = 0.14,
+): number {
+  const step = 0.14;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const steps = Math.max(1, Math.ceil(maxRange / step));
+  for (let i = 1; i <= steps; i++) {
+    const d = Math.min(maxRange, i * step);
+    if (findBlockingWallForCircle(grid, x + cos * d, y + sin * d, radius) !== null) {
+      return Math.max(0.2, d - step * 0.5);
+    }
+  }
+  return maxRange;
+}
+
 export function isPointInBush(grid: Uint8Array, x: number, y: number): boolean {
   return getTile(grid, Math.floor(x), Math.floor(y)) === TileType.BUSH;
 }

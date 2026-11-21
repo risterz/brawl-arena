@@ -5,6 +5,7 @@ import {
   HazardZoneState,
   MatchState,
   ProjectileState,
+  raycastWallDistance,
 } from '@brawl-arena/shared';
 import {
   createBombVisual,
@@ -45,6 +46,13 @@ export class VfxManager {
   private particles: Particle[] = [];
   private telegraphGroup: THREE.Group;
   private telegraphMesh: THREE.Mesh | null = null;
+  private telegraphMat = new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.28,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
   private lastTelegraphKey = '';
 
   // Shared sculpted particle geometries (zero plain spheres!)
@@ -264,31 +272,69 @@ export class VfxManager {
     });
   }
 
-  public updateTelegraph(input: AimTelegraphInput | null): void {
+  public updateTelegraph(input: AimTelegraphInput | null, grid?: Uint8Array): void {
     if (!input || !input.active) {
       this.telegraphGroup.visible = false;
       return;
     }
     this.telegraphGroup.visible = true;
-    const key = `${input.spec.shape}:${input.spec.range.toFixed(1)}:${input.spec.spreadRad.toFixed(2)}:${input.isSuper ? 1 : 0}`;
+
+    const clipToWalls = Boolean(grid && !input.spec.isHeal && !input.spec.lobbed && !input.spec.isLeap);
+    if (clipToWalls && grid && (input.spec.shape === 'cone' || input.spec.shape === 'arc')) {
+      // Dynamic wall-clipped shotgun/arc fan so aim cone never shines through solid crates!
+      const spread = Math.max(0.35, input.spec.spreadRad);
+      const rays = 14;
+      const positions = new Float32Array((rays + 1) * 3);
+      const indices: number[] = [];
+      positions[0] = 0;
+      positions[1] = 0;
+      positions[2] = 0;
+      for (let i = 0; i <= rays; i++) {
+        const localA = -spread / 2 + (i / rays) * spread;
+        const dist = raycastWallDistance(grid, input.x, input.y, input.angle + localA, input.spec.range, 0.14);
+        const idx = (i + 1) * 3;
+        positions[idx] = Math.cos(localA) * dist;
+        positions[idx + 1] = 0;
+        positions[idx + 2] = Math.sin(localA) * dist;
+        if (i < rays) {
+          indices.push(0, i + 1, i + 2);
+        }
+      }
+      if (this.telegraphMesh) {
+        this.telegraphGroup.remove(this.telegraphMesh);
+        this.telegraphMesh.geometry.dispose();
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setIndex(indices);
+      this.telegraphMat.color.setHex(input.isSuper ? 0xffd43b : 0xffffff);
+      this.telegraphMat.opacity = input.isSuper ? 0.42 : 0.28;
+      this.telegraphMesh = new THREE.Mesh(geo, this.telegraphMat);
+      this.telegraphGroup.add(this.telegraphMesh);
+      this.lastTelegraphKey = 'dynamic-cone';
+      this.telegraphGroup.position.set(input.x, 0.07, input.y);
+      this.telegraphGroup.rotation.y = -input.angle;
+      return;
+    }
+
+    const effectiveRange =
+      clipToWalls && grid && input.spec.shape === 'line'
+        ? raycastWallDistance(grid, input.x, input.y, input.angle, input.spec.range, 0.14)
+        : input.spec.range;
+
+    const key = `${input.spec.shape}:${effectiveRange.toFixed(1)}:${input.spec.spreadRad.toFixed(2)}:${input.isSuper ? 1 : 0}`;
     if (key !== this.lastTelegraphKey || !this.telegraphMesh) {
       if (this.telegraphMesh) {
         this.telegraphGroup.remove(this.telegraphMesh);
         this.telegraphMesh.geometry.dispose();
       }
-      const color = input.isSuper ? 0xffd43b : 0xffffff;
-      const mat = new THREE.MeshBasicMaterial({
-        color,
-        transparent: true,
-        opacity: input.isSuper ? 0.42 : 0.28,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      });
+      this.telegraphMat.color.setHex(input.isSuper ? 0xffd43b : 0xffffff);
+      this.telegraphMat.opacity = input.isSuper ? 0.42 : 0.28;
 
       let geo: THREE.BufferGeometry;
       if (input.spec.shape === 'cone' || input.spec.shape === 'arc') {
         const spread = Math.max(0.35, input.spec.spreadRad);
-        geo = new THREE.CircleGeometry(input.spec.range, 20, -spread / 2, spread);
+        geo = new THREE.CircleGeometry(effectiveRange, 20, -spread / 2, spread);
         geo.rotateX(-Math.PI / 2);
       } else if (input.spec.shape === 'circle') {
         const r = Math.max(1.2, input.spec.puddleRadius ?? input.spec.radius);
@@ -296,12 +342,12 @@ export class VfxManager {
         geo.rotateX(-Math.PI / 2);
       } else {
         const w = Math.max(0.45, input.spec.radius * 2.6);
-        geo = new THREE.PlaneGeometry(input.spec.range, w);
-        geo.translate(input.spec.range / 2, 0, 0);
+        geo = new THREE.PlaneGeometry(effectiveRange, w);
+        geo.translate(effectiveRange / 2, 0, 0);
         geo.rotateX(-Math.PI / 2);
       }
 
-      this.telegraphMesh = new THREE.Mesh(geo, mat);
+      this.telegraphMesh = new THREE.Mesh(geo, this.telegraphMat);
       this.telegraphGroup.add(this.telegraphMesh);
       this.lastTelegraphKey = key;
     }

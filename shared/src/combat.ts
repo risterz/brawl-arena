@@ -1,9 +1,8 @@
 import { BRAWLERS } from './brawlers';
 import {
   destroyBreakableWallsInRadius,
-  getTile,
+  findBlockingWallForCircle,
   isPointInBush,
-  isTileBlockingProjectile,
   resolveCircleGridCollision,
 } from './collision';
 import {
@@ -317,11 +316,12 @@ export function stepProjectiles(
       continue;
     }
 
-    // Straight projectile (substepped for crisp wall/entity hits)
+    // Straight projectile (fine-substepped circle-vs-wall check prevents tunneling or corner-squeezing!)
     const speed = Math.hypot(p.vx, p.vy);
     const stepDist = speed * dt;
-    const substeps = Math.max(1, Math.ceil(stepDist / 0.35));
+    const substeps = Math.max(1, Math.ceil(stepDist / 0.14));
     const subDt = dt / substeps;
+    const wallHitRadius = Math.max(0.14, Math.min(0.28, p.radius * 0.72));
     let alive = true;
 
     for (let s = 0; s < substeps && alive; s++) {
@@ -334,19 +334,17 @@ export function stepProjectiles(
         break;
       }
 
-      // Heal waves pass through walls; normal attacks collide with walls
+      // Heal waves pass through walls; normal attacks collide cleanly with walls & diagonal corners
       if (!p.isHeal) {
-        const tx = Math.floor(p.x);
-        const ty = Math.floor(p.y);
-        const tile = getTile(state.grid, tx, ty);
-        if (isTileBlockingProjectile(tile)) {
+        const hitTile = findBlockingWallForCircle(state.grid, p.x, p.y, wallHitRadius);
+        if (hitTile !== null) {
           if (p.breaksWalls) {
             const broken = destroyBreakableWallsInRadius(state.grid, p.x, p.y, p.radius + 0.55);
             if (broken.length > 0) {
               events.push({ type: 'wall_break', tiles: broken });
             }
             // Stop only on indestructible walls/mine
-            if (tile !== 1) {
+            if (hitTile !== 1) {
               alive = false;
               break;
             }
