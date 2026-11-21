@@ -735,6 +735,309 @@ body,
   border: 1.5px dashed #395b9c;
 }
 
+/* Wallet & Shop UI */
+.wallet-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.wallet-pill {
+  font-family: 'Fredoka', sans-serif;
+  font-size: 14px;
+  padding: 5px 11px;
+  border-radius: 99px;
+  border: 2px solid #0b1326;
+  background: rgba(11, 20, 42, 0.9);
+  box-shadow: 0 3px 0 #0b1326;
+  white-space: nowrap;
+}
+
+.wallet-pill.coins {
+  color: #ffd43b;
+}
+
+.wallet-pill.gems {
+  color: #e67dff;
+}
+
+.shop-launch-btn {
+  position: relative;
+}
+
+.shop-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #ff4757;
+  border: 2px solid #fff;
+}
+
+.shop-shell {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: stretch;
+  pointer-events: none;
+  padding: 16px;
+}
+
+.shop-stage-badge {
+  position: fixed;
+  left: 20px;
+  bottom: 20px;
+  background: rgba(11, 19, 38, 0.86);
+  border: 3px solid #0b1326;
+  border-radius: 14px;
+  padding: 10px 16px;
+  box-shadow: 0 5px 0 #0b1326;
+  pointer-events: none;
+}
+
+.shop-panel {
+  pointer-events: auto;
+  width: min(560px, 94vw);
+  max-height: 100%;
+  background: rgba(14, 24, 52, 0.92);
+  border: 3px solid #0b1326;
+  border-radius: 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  gap: 12px;
+  backdrop-filter: blur(8px);
+}
+
+.shop-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.shop-header h2 {
+  margin: 0;
+  font-family: 'Fredoka', sans-serif;
+  font-size: 24px;
+  color: #ffd43b;
+}
+
+.shop-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.shop-body {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-right: 4px;
+}
+
+.shop-featured-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.shop-special-card {
+  border-radius: 14px;
+  border: 2.5px solid #0b1326;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  box-shadow: 0 4px 0 #0b1326;
+}
+
+.shop-special-card.daily {
+  background: linear-gradient(145deg, #1b4b6b, #152b54);
+}
+
+.shop-special-card.box {
+  background: linear-gradient(145deg, #4b2075, #1f1a4d);
+}
+
+.shop-special-title {
+  font-family: 'Fredoka', sans-serif;
+  font-size: 16px;
+  color: #ffd43b;
+}
+
+.shop-special-sub {
+  font-size: 11.5px;
+  color: #d6e7ff;
+  margin-top: 3px;
+  line-height: 1.3;
+}
+
+.shop-box-banner {
+  background: linear-gradient(135deg, #ffd43b, #ff8811);
+  color: #0b1326;
+  font-family: 'Fredoka', sans-serif;
+  font-size: 16px;
+  text-align: center;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 2.5px solid #0b1326;
+}
+
+.shop-section-label {
+  font-size: 11.5px;
+  font-weight: 900;
+  letter-spacing: 0.6px;
+  color: #9ec5ff;
+}
+
+.shop-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.shop-item-card {
+  background: rgba(20, 34, 70, 0.9);
+  border: 2.5px solid #2b4784;
+  border-radius: 14px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.14s ease;
+}
+
+.shop-item-card:hover {
+  transform: translateY(-2px);
+}
+
+.shop-item-card.previewing {
+  border-color: #ffd43b;
+  box-shadow: 0 0 14px rgba(255, 212, 59, 0.45);
+}
+
+.shop-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+}
+
+.rarity-pill {
+  font-size: 10px;
+  font-weight: 900;
+  padding: 2px 7px;
+  border-radius: 99px;
+  color: #0b1326;
+}
+
+.rarity-pill.rare { background: #4cd2ff; }
+.rarity-pill.epic { background: #d56bff; color: #fff; }
+.rarity-pill.mythic { background: #ffd43b; }
+
+.deal-pill {
+  font-size: 10px;
+  font-weight: 900;
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: #ff4757;
+  color: #fff;
+}
+
+.brawler-tag {
+  font-size: 10px;
+  font-weight: 800;
+  color: #9ec5ff;
+}
+
+.shop-swatch-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.shop-mini-portrait {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  border: 2.5px solid #ffd43b;
+  background: #0d1833;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.shop-ring-preview {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 5px solid #ffd43b;
+  flex-shrink: 0;
+}
+
+.shop-item-name {
+  font-family: 'Fredoka', sans-serif;
+  font-size: 14px;
+  color: #fff;
+  line-height: 1.15;
+}
+
+.shop-item-desc {
+  font-size: 11px;
+  color: #b7d2ff;
+  line-height: 1.25;
+  margin-top: 2px;
+}
+
+.shop-card-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.shop-preview-hint {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #7ea8e8;
+}
+
+.price-old {
+  text-decoration: line-through;
+  opacity: 0.6;
+  margin-right: 4px;
+}
+
+.results-reward-pill {
+  background: linear-gradient(135deg, #ffd43b, #ff9f1c);
+  color: #0b1326;
+  font-family: 'Fredoka', sans-serif;
+  font-size: 15px;
+  padding: 4px 14px;
+  border-radius: 99px;
+  border: 2.5px solid #0b1326;
+  box-shadow: 0 3px 0 #0b1326;
+}
+
+@media (max-width: 720px) {
+  .shop-featured-grid,
+  .shop-grid {
+    grid-template-columns: 1fr;
+  }
+  .shop-stage-badge {
+    display: none;
+  }
+}
+
 .controls-hint {
   position: fixed;
   bottom: 10px;

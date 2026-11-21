@@ -1,15 +1,41 @@
 import {
+  BRAWL_BOX_COST,
   BRAWLER_LIST,
   BrawlerId,
   BRAWLERS,
+  DAILY_FREE_COINS,
+  DAILY_FREE_GEMS,
   GameMode,
+  getEffectivePrice,
+  getShopItem,
   LobbyState,
   MAP_LIST,
   MapId,
   MatchState,
+  PlayerProfile,
+  SHOP_ITEMS,
+  ShopItem,
   Team,
 } from '@brawl-arena/shared';
 import { computePodiumLineup } from '../render/victoryStage';
+
+export type ShopTab = 'featured' | 'skins' | 'rings';
+
+export interface ShopViewProps {
+  profile: PlayerProfile;
+  activeTab: ShopTab;
+  previewBrawler: BrawlerId;
+  previewSkinId: string | null;
+  previewRingId: string | null;
+  lastBoxRewardText: string | null;
+  onSelectTab: (tab: ShopTab) => void;
+  onPreviewItem: (item: ShopItem | null, brawlerId?: BrawlerId, category?: 'skin' | 'ring') => void;
+  onBuyItem: (itemId: string) => void;
+  onEquipItem: (category: 'skin' | 'ring', itemId: string | null, brawlerId?: BrawlerId) => void;
+  onClaimDaily: () => void;
+  onOpenBox: () => void;
+  onClose: () => void;
+}
 
 export interface HomeViewProps {
   playerName: string;
@@ -18,12 +44,14 @@ export interface HomeViewProps {
   selectedMode: GameMode;
   blueSize: number;
   redSize: number;
+  profile: PlayerProfile;
   sfxMuted: boolean;
   bgmMuted: boolean;
   onToggleSfx: () => boolean;
   onToggleBgm: () => boolean;
   onNameChange: (name: string) => void;
   onOpenBrawlers: () => void;
+  onOpenShop: () => void;
   onSelectMap: (mapId: MapId) => void;
   onSelectMode: (mode: GameMode) => void;
   onSelectFormat: (blueSize: number, redSize: number) => void;
@@ -51,6 +79,7 @@ export interface ResultsViewProps {
   localSlot: number;
   isOnline: boolean;
   isHost: boolean;
+  rewardSummary?: { coinsEarned: number; gemsEarned: number; milestoneHit: boolean } | null;
   onPlayAgain: () => void;
   onHome: () => void;
 }
@@ -128,6 +157,13 @@ export class ScreenManager {
             <span>Custom 1v1 • 2v2 • 1v2 • 3v3 • 3D Arena</span>
           </div>
           <div class="action-row">
+            <div class="wallet-bar">
+              <span class="wallet-pill coins">🪙 ${props.profile.coins}</span>
+              <span class="wallet-pill gems">💎 ${props.profile.gems}</span>
+            </div>
+            <button id="open-shop-btn" class="btn btn-gold btn-sm shop-launch-btn">
+              🛒 SHOP${props.profile.dailyAvailable ? '<span class="shop-dot"></span>' : ''}
+            </button>
             <button id="home-bgm-btn" class="btn btn-dark btn-sm">${props.bgmMuted ? '🔇 BGM' : '🎵 BGM'}</button>
             <button id="home-sfx-btn" class="btn btn-dark btn-sm">${props.sfxMuted ? '🔇 SFX' : '🔊 SFX'}</button>
             <div class="name-box">
@@ -187,6 +223,7 @@ export class ScreenManager {
     });
 
     this.container.querySelector('#open-brawlers-btn')!.addEventListener('click', props.onOpenBrawlers);
+    this.container.querySelector('#open-shop-btn')!.addEventListener('click', props.onOpenShop);
     this.container.querySelector('#play-solo-btn')!.addEventListener('click', props.onPlaySolo);
     this.container.querySelector('#create-room-btn')!.addEventListener('click', props.onCreateRoom);
 
@@ -449,6 +486,196 @@ export class ScreenManager {
     }
   }
 
+  public renderShop(props: ShopViewProps): void {
+    this.container.classList.remove('hidden');
+    const { profile, activeTab } = props;
+    const owned = new Set(profile.ownedItems);
+
+    const renderItemCard = (item: ShopItem) => {
+      const isOwned = owned.has(item.id);
+      const isDeal = profile.dailyDealIds.includes(item.id);
+      const effectivePrice = getEffectivePrice(item, profile.dailyDealIds);
+      const curIcon = item.currency === 'coins' ? '🪙' : '💎';
+      const canAfford = item.currency === 'coins' ? profile.coins >= effectivePrice : profile.gems >= effectivePrice;
+      const isEquipped =
+        item.category === 'ring'
+          ? profile.loadout.ring === item.id
+          : Boolean(item.brawlerId && profile.loadout.skins[item.brawlerId] === item.id);
+      const isPreviewing =
+        item.category === 'ring' ? props.previewRingId === item.id : props.previewSkinId === item.id;
+
+      const accent = item.skinSpec?.accentHex ?? item.ringSpec?.accentHex ?? '#ffd43b';
+      const brawlerTag = item.brawlerId ? BRAWLERS[item.brawlerId].name : 'ALL BRAWLERS';
+      const priceHtml = isDeal
+        ? `<span class="price-old">${item.price}</span> ${curIcon} ${effectivePrice}`
+        : `${curIcon} ${effectivePrice}`;
+
+      let actionBtn: string;
+      if (isEquipped) {
+        actionBtn = `<button class="btn btn-dark btn-sm shop-unequip-btn" data-cat="${item.category}" data-brawler="${item.brawlerId ?? ''}">Equipped ✓</button>`;
+      } else if (isOwned) {
+        actionBtn = `<button class="btn btn-blue btn-sm shop-equip-btn" data-id="${item.id}" data-cat="${item.category}" data-brawler="${item.brawlerId ?? ''}">Equip</button>`;
+      } else {
+        actionBtn = `<button class="btn ${canAfford ? 'btn-gold' : 'btn-dark'} btn-sm shop-buy-btn" data-id="${item.id}" ${canAfford ? '' : 'disabled'}>${priceHtml}</button>`;
+      }
+
+      return `
+        <div class="shop-item-card rarity-${item.rarity} ${isPreviewing ? 'previewing' : ''}" data-preview-id="${item.id}">
+          <div class="shop-card-top">
+            <span class="rarity-pill ${item.rarity}">${item.rarity.toUpperCase()}</span>
+            ${isDeal && !isOwned ? '<span class="deal-pill">-25%</span>' : `<span class="brawler-tag">${escapeHtml(brawlerTag)}</span>`}
+          </div>
+          <div class="shop-swatch-row">
+            ${
+              item.brawlerId
+                ? `<img class="shop-mini-portrait" src="/portraits/${item.brawlerId}.png" style="border-color:${accent};box-shadow:0 0 12px ${accent}55;" alt="${escapeHtml(item.name)}" />`
+                : `<div class="shop-ring-preview" style="border-color:${accent};box-shadow:0 0 14px ${accent};"></div>`
+            }
+            <div>
+              <div class="shop-item-name">${escapeHtml(item.name)}</div>
+              <div class="shop-item-desc">${escapeHtml(item.tagline)}</div>
+            </div>
+          </div>
+          <div class="shop-card-foot">
+            <span class="shop-preview-hint">${isPreviewing ? '👁 Previewing 3D' : 'Click to Preview'}</span>
+            ${actionBtn}
+          </div>
+        </div>
+      `;
+    };
+
+    let bodyHtml = '';
+    if (activeTab === 'featured') {
+      const dealItems = profile.dailyDealIds
+        .map((id) => getShopItem(id))
+        .filter((it): it is ShopItem => it !== null);
+      bodyHtml = `
+        <div class="shop-featured-grid">
+          <div class="shop-special-card daily">
+            <div>
+              <div class="shop-special-title">🎁 DAILY FREE GIFT</div>
+              <div class="shop-special-sub">+${DAILY_FREE_COINS} 🪙 Coins &amp; +${DAILY_FREE_GEMS} 💎 Gems every day</div>
+            </div>
+            <button id="shop-daily-btn" class="btn ${profile.dailyAvailable ? 'btn-gold' : 'btn-dark'} btn-sm" ${profile.dailyAvailable ? '' : 'disabled'}>
+              ${profile.dailyAvailable ? 'CLAIM FREE' : 'CLAIMED ✓'}
+            </button>
+          </div>
+
+          <div class="shop-special-card box">
+            <div>
+              <div class="shop-special-title">📦 MYSTERY BRAWL BOX</div>
+              <div class="shop-special-sub">Roll Coins, Gems, or a random 3D Skin / Aura Ring!</div>
+            </div>
+            <button id="shop-box-btn" class="btn ${profile.coins >= BRAWL_BOX_COST ? 'btn-purple' : 'btn-dark'} btn-sm" ${profile.coins >= BRAWL_BOX_COST ? '' : 'disabled'}>
+              OPEN 🪙 ${BRAWL_BOX_COST}
+            </button>
+          </div>
+        </div>
+        ${props.lastBoxRewardText ? `<div class="shop-box-banner">✨ ${escapeHtml(props.lastBoxRewardText)}</div>` : ''}
+        <div class="shop-section-label">🔥 TODAY'S DEALS (25% OFF)</div>
+        <div class="shop-grid">${dealItems.map(renderItemCard).join('')}</div>
+      `;
+    } else if (activeTab === 'skins') {
+      const skins = SHOP_ITEMS.filter((it) => it.category === 'skin');
+      bodyHtml = `
+        <div class="shop-section-label">🎨 3D BRAWLER SKINS (CLICK ANY CARD FOR LIVE 3D PREVIEW)</div>
+        <div class="shop-grid">${skins.map(renderItemCard).join('')}</div>
+      `;
+    } else {
+      const rings = SHOP_ITEMS.filter((it) => it.category === 'ring');
+      bodyHtml = `
+        <div class="shop-section-label">✨ CUSTOM GROUND AURA RINGS</div>
+        <div class="shop-grid">${rings.map(renderItemCard).join('')}</div>
+      `;
+    }
+
+    const activeSkinObj = getShopItem(props.previewSkinId);
+    const activeRingObj = getShopItem(props.previewRingId);
+    const previewLabel = activeSkinObj
+      ? `${activeSkinObj.name}`
+      : `${BRAWLERS[props.previewBrawler].name} (Classic)`;
+
+    this.container.innerHTML = `
+      <div class="shop-shell">
+        <div class="shop-stage-badge">
+          <div style="font-family:'Fredoka',sans-serif;font-size:18px;color:#ffd43b;">👁 ${escapeHtml(previewLabel)}</div>
+          <div style="font-size:11px;color:#b7d4ff;font-weight:800;">
+            Aura: ${escapeHtml(activeRingObj ? activeRingObj.name : 'Default Team Ring')} • Wins: ${profile.wins}
+          </div>
+        </div>
+
+        <div class="shop-panel">
+          <div class="shop-header">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <h2>🛒 BRAWL SHOP</h2>
+              <div class="wallet-bar">
+                <span class="wallet-pill coins">🪙 ${profile.coins}</span>
+                <span class="wallet-pill gems">💎 ${profile.gems}</span>
+              </div>
+            </div>
+            <button id="close-shop-btn" class="btn btn-dark btn-sm">Back</button>
+          </div>
+
+          <div class="shop-tabs">
+            <button class="map-chip ${activeTab === 'featured' ? 'active' : ''}" data-shop-tab="featured">🔥 Featured &amp; Boxes</button>
+            <button class="map-chip ${activeTab === 'skins' ? 'active' : ''}" data-shop-tab="skins">🎨 Skins (12)</button>
+            <button class="map-chip ${activeTab === 'rings' ? 'active' : ''}" data-shop-tab="rings">✨ Aura Rings (5)</button>
+          </div>
+
+          <div class="shop-body">${bodyHtml}</div>
+        </div>
+      </div>
+    `;
+
+    this.container.querySelector('#close-shop-btn')!.addEventListener('click', props.onClose);
+    this.container.querySelector('#shop-daily-btn')?.addEventListener('click', props.onClaimDaily);
+    this.container.querySelector('#shop-box-btn')?.addEventListener('click', props.onOpenBox);
+
+    this.container.querySelectorAll('[data-shop-tab]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        props.onSelectTab((btn as HTMLElement).dataset.shopTab as ShopTab);
+      });
+    });
+
+    this.container.querySelectorAll('.shop-buy-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        props.onBuyItem((btn as HTMLElement).dataset.id!);
+      });
+    });
+
+    this.container.querySelectorAll('.shop-equip-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const el = btn as HTMLElement;
+        props.onEquipItem(
+          el.dataset.cat as 'skin' | 'ring',
+          el.dataset.id!,
+          (el.dataset.brawler || undefined) as BrawlerId | undefined,
+        );
+      });
+    });
+
+    this.container.querySelectorAll('.shop-unequip-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const el = btn as HTMLElement;
+        props.onEquipItem(
+          el.dataset.cat as 'skin' | 'ring',
+          null,
+          (el.dataset.brawler || undefined) as BrawlerId | undefined,
+        );
+      });
+    });
+
+    this.container.querySelectorAll('[data-preview-id]').forEach((card) => {
+      card.addEventListener('click', () => {
+        const item = getShopItem((card as HTMLElement).dataset.previewId);
+        if (item) props.onPreviewItem(item, item.brawlerId, item.category);
+      });
+    });
+  }
+
   public renderResults(props: ResultsViewProps): void {
     this.container.classList.remove('hidden');
     const { state, localSlot } = props;
@@ -513,6 +740,14 @@ export class ScreenManager {
         ? `<button id="play-again-btn" class="btn btn-gold">${props.isOnline ? 'BACK TO LOBBY' : 'PLAY AGAIN'}</button>`
         : '<span style="color:#ffd43b;font-weight:800;background:rgba(11,19,38,0.8);padding:8px 14px;border-radius:12px;">Waiting for host to return to lobby...</span>';
 
+    const rewardPill = props.rewardSummary
+      ? `<div class="results-reward-pill">+${props.rewardSummary.coinsEarned} 🪙${
+          props.rewardSummary.gemsEarned > 0
+            ? ` • +${props.rewardSummary.gemsEarned} 💎 3-WIN BONUS!`
+            : ''
+        }</div>`
+      : '';
+
     this.container.innerHTML = `
       <div class="results-stage-overlay">
         <div class="results-top-bar">
@@ -521,6 +756,7 @@ export class ScreenManager {
             <div class="results-score-pill">
               <span style="color:#54c7ff;">BLUE ${state.blueGems}</span> — <span style="color:#ff6b7a;">RED ${state.redGems}</span>
             </div>
+            ${rewardPill}
             ${enemyStarNote}
           </div>
         </div>

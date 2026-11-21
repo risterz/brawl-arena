@@ -305,8 +305,8 @@ export function buildResultsStage(state: MatchState, localSlot: number): Results
     rim.position.set(cfg.x, cfg.y + 0.01, cfg.z);
     group.add(rim);
 
-    // Spawn animated rigged 3D brawler facing the camera (+Z in Three.js -> body faces +X so rotate -PI/2!)
-    const visual = createBrawlerMesh(m.brawler.brawlerId, m.brawler.team, m.isLocal);
+    // Spawn animated rigged 3D brawler wearing equipped skin, facing the camera (+Z)
+    const visual = createBrawlerMesh(m.brawler.brawlerId, m.brawler.team, m.isLocal, m.brawler.skinId, m.brawler.ringId);
     visual.root.position.set(cfg.x, cfg.y + 0.01, cfg.z);
     visual.root.scale.setScalar(cfg.scale);
     visual.bodyGroup.rotation.y = -Math.PI / 2 + cfg.yaw;

@@ -18,6 +18,8 @@ export interface LocalMatchOptions {
   blueSize?: number;
   redSize?: number;
   playerBrawler: BrawlerId;
+  playerSkinId?: string | null;
+  playerRingId?: string | null;
   playerName: string;
 }
 
@@ -37,6 +39,8 @@ export class LocalMatchController {
         name: opts.playerName.trim() || 'You',
         isBot: false,
         brawlerId: opts.playerBrawler,
+        skinId: opts.playerSkinId ?? null,
+        ringId: opts.playerRingId ?? null,
       },
     ];
     let botCursor = 0;

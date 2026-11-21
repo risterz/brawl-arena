@@ -158,13 +158,17 @@ export class ArenaRenderer {
   private ballRoot: THREE.Group | null = null;
   private ballSpinGroup: THREE.Group | null = null;
   private ballSuperHalo: THREE.Mesh | null = null;
-  private brawlers: Map<number, { brawlerId: BrawlerId; team: Team; isLocal: boolean; visual: BrawlerVisual }> =
-    new Map();
+  private brawlers: Map<
+    number,
+    { brawlerId: BrawlerId; team: Team; isLocal: boolean; skinId: string | null; ringId: string | null; visual: BrawlerVisual }
+  > = new Map();
   private vfx: VfxManager;
   private raycaster = new THREE.Raycaster();
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private previewVisual: BrawlerVisual | null = null;
   private previewBrawlerId: BrawlerId | null = null;
+  private previewSkinId: string | null = null;
+  private previewRingId: string | null = null;
   private previewGameMode: GameMode = 'gem-grab';
   private previewStage: PreviewStageHandle | null = null;
   private matchSurround: MatchSurroundHandle | null = null;
@@ -234,10 +238,17 @@ export class ArenaRenderer {
     this.previewGroup.add(this.previewStage.group);
   }
 
-  public setPreviewBrawler(brawlerId: BrawlerId, gameMode?: GameMode): void {
+  public setPreviewBrawler(
+    brawlerId: BrawlerId,
+    gameMode?: GameMode,
+    skinId?: string | null,
+    ringId?: string | null,
+  ): void {
     this.mode = 'preview';
     this.clearResultsStage();
     const targetMode = gameMode ?? this.previewGameMode;
+    const nextSkin = skinId ?? null;
+    const nextRing = ringId ?? null;
     if (!this.previewStage || targetMode !== this.previewGameMode) {
       this.buildPreviewPedestal(targetMode);
     }
@@ -250,15 +261,21 @@ export class ArenaRenderer {
     }
     this.brawlers.clear();
 
-    if (this.previewBrawlerId !== brawlerId) {
+    if (
+      this.previewBrawlerId !== brawlerId ||
+      this.previewSkinId !== nextSkin ||
+      this.previewRingId !== nextRing
+    ) {
       if (this.previewVisual) {
         this.previewGroup.remove(this.previewVisual.root);
       }
-      this.previewVisual = createBrawlerMesh(brawlerId, 'blue', true);
+      this.previewVisual = createBrawlerMesh(brawlerId, 'blue', true, nextSkin, nextRing);
       this.previewVisual.root.scale.setScalar(1.35);
-      this.previewVisual.superRing.visible = true;
+      this.previewVisual.superRing.visible = !nextRing;
       this.previewGroup.add(this.previewVisual.root);
       this.previewBrawlerId = brawlerId;
+      this.previewSkinId = nextSkin;
+      this.previewRingId = nextRing;
     }
   }
 
@@ -266,9 +283,11 @@ export class ArenaRenderer {
     if (this.mode !== 'preview' || !this.previewBrawlerId) return;
     const current = this.previewBrawlerId;
     const currentMode = this.previewGameMode;
+    const currentSkin = this.previewSkinId;
+    const currentRing = this.previewRingId;
     this.previewBrawlerId = null;
     this.buildPreviewPedestal(currentMode);
-    this.setPreviewBrawler(current, currentMode);
+    this.setPreviewBrawler(current, currentMode, currentSkin, currentRing);
   }
 
   public renderPreview(dt: number): void {
@@ -828,11 +847,20 @@ export class ArenaRenderer {
     for (const b of state.brawlers) {
       let entry = this.brawlers.get(b.slotIndex);
       const isLocal = b.slotIndex === localSlot;
-      if (!entry || entry.brawlerId !== b.brawlerId || entry.team !== b.team || entry.isLocal !== isLocal) {
+      const bSkin = b.skinId ?? null;
+      const bRing = b.ringId ?? null;
+      if (
+        !entry ||
+        entry.brawlerId !== b.brawlerId ||
+        entry.team !== b.team ||
+        entry.isLocal !== isLocal ||
+        entry.skinId !== bSkin ||
+        entry.ringId !== bRing
+      ) {
         if (entry) this.scene.remove(entry.visual.root);
-        const visual = createBrawlerMesh(b.brawlerId, b.team, isLocal);
+        const visual = createBrawlerMesh(b.brawlerId, b.team, isLocal, bSkin, bRing);
         this.scene.add(visual.root);
-        entry = { brawlerId: b.brawlerId, team: b.team, isLocal, visual };
+        entry = { brawlerId: b.brawlerId, team: b.team, isLocal, skinId: bSkin, ringId: bRing, visual };
         this.brawlers.set(b.slotIndex, entry);
       }
 

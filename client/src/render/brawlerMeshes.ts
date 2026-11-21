@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BrawlerId, BRAWLERS, Team } from '@brawl-arena/shared';
+import { BrawlerId, BRAWLERS, getShopItem, Team } from '@brawl-arena/shared';
 import { cloneAnimatedModel } from './modelBank';
 
 export type BrawlerEmote = 'none' | 'victory' | 'defeat';
@@ -26,10 +26,41 @@ function makeToonMat(color: string | number, emissive = 0x000000): THREE.MeshToo
   });
 }
 
+function applyCosmeticSkinToMaterials(materials: THREE.Material[], skinId?: string | null): void {
+  const spec = getShopItem(skinId)?.skinSpec;
+  if (!spec) return;
+  const tint = new THREE.Color(spec.tintHex);
+  const emissive = new THREE.Color(spec.emissiveHex);
+
+  for (const m of materials) {
+    if (m.userData.isGlass) continue; // preserve translucent glass tank/flasks on Mort!
+    if (m instanceof THREE.MeshStandardMaterial) {
+      // Keep near-black outlines/eyes crisp while recoloring armor/clothing/weapons vividly
+      const lum = m.color.r * 0.299 + m.color.g * 0.587 + m.color.b * 0.114;
+      if (lum > 0.09) {
+        m.color.lerp(tint, spec.tintStrength);
+        m.emissive.copy(emissive);
+        m.emissiveIntensity = spec.emissiveIntensity;
+        m.metalness = Math.max(m.metalness, spec.metalness);
+        m.roughness = Math.min(m.roughness, spec.roughness);
+      }
+    } else if (m instanceof THREE.MeshToonMaterial) {
+      const lum = m.color.r * 0.299 + m.color.g * 0.587 + m.color.b * 0.114;
+      if (lum > 0.09) {
+        m.color.lerp(tint, spec.tintStrength);
+        m.emissive.copy(emissive);
+        m.emissiveIntensity = spec.emissiveIntensity * 0.85;
+      }
+    }
+  }
+}
+
 export function createBrawlerMesh(
   brawlerId: BrawlerId,
   team: Team,
   isLocal: boolean,
+  skinId?: string | null,
+  ringId?: string | null,
 ): BrawlerVisual {
   const cfg = BRAWLERS[brawlerId];
   const root = new THREE.Group();
@@ -52,15 +83,36 @@ export function createBrawlerMesh(
   shadow.position.y = 0.02;
   root.add(shadow);
 
-  // Team ring under feet
-  const ringColor = isLocal ? 0x4ef2ff : team === 'blue' ? 0x2aa4ff : 0xff4757;
+  // Team ring under feet (supports custom Shop Aura Rings!)
+  const customRing = getShopItem(ringId)?.ringSpec;
+  const ringColor = customRing
+    ? customRing.primaryHex
+    : isLocal
+      ? 0x4ef2ff
+      : team === 'blue'
+        ? 0x2aa4ff
+        : 0xff4757;
   const teamRing = new THREE.Mesh(
-    new THREE.RingGeometry(cfg.radius * 1.15, cfg.radius * 1.45, 28),
-    new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide, transparent: true, opacity: 0.92, depthWrite: false }),
+    new THREE.RingGeometry(cfg.radius * 1.15, cfg.radius * (customRing ? 1.56 : 1.45), 28),
+    new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide, transparent: true, opacity: 0.94, depthWrite: false }),
   );
   teamRing.rotation.x = -Math.PI / 2;
   teamRing.position.y = 0.04;
   root.add(teamRing);
+  if (customRing) {
+    const innerGlow = new THREE.Mesh(
+      new THREE.RingGeometry(cfg.radius * 0.92, cfg.radius * 1.14, 28),
+      new THREE.MeshBasicMaterial({
+        color: customRing.secondaryHex,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false,
+      }),
+    );
+    innerGlow.position.z = 0.005;
+    teamRing.add(innerGlow);
+  }
 
   // Golden Super-ready ring
   const superRing = new THREE.Mesh(
@@ -105,6 +157,7 @@ export function createBrawlerMesh(
       }
     });
     bodyGroup.add(glbModel);
+    applyCosmeticSkinToMaterials(materials, skinId);
 
     let mixer: THREE.AnimationMixer | null = null;
     let idleAction: THREE.AnimationAction | null = null;

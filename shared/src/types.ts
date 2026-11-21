@@ -118,6 +118,8 @@ export interface BrawlerState {
   name: string;
   isBot: boolean;
   brawlerId: BrawlerId;
+  skinId?: string | null;
+  ringId?: string | null;
   x: number;
   y: number;
   vx: number;
@@ -253,6 +255,8 @@ export interface SlotSetup {
   name: string;
   isBot: boolean;
   brawlerId: BrawlerId;
+  skinId?: string | null;
+  ringId?: string | null;
 }
 
 export interface MatchConfig {
