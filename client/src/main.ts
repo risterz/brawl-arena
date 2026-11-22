@@ -4,13 +4,12 @@ import { SfxEngine } from './audio/sfx';
 import { ControlManager } from './input/controls';
 import { LocalMatchController } from './net/localController';
 import { OnlineMatchController } from './net/onlineController';
-import { ProfileClient } from './net/profileClient';
 import { ArenaRenderer } from './render/arenaScene';
 import { preloadAllModels } from './render/modelBank';
 import { MatchHud } from './ui/hud';
-import { ScreenManager, ShopTab } from './ui/screens';
+import { ScreenManager } from './ui/screens';
 
-type AppMode = 'home' | 'shop' | 'lobby' | 'solo' | 'online';
+type AppMode = 'home' | 'lobby' | 'solo' | 'online';
 
 function boot(): void {
   const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
@@ -34,18 +33,11 @@ function boot(): void {
 
   let mode: AppMode = 'home';
   let playerName = localStorage.getItem('brawl_arena_name') || `Brawler${Math.floor(10 + Math.random() * 89)}`;
-  const profileClient = new ProfileClient(playerName);
   let selectedBrawler: BrawlerId = 'buck';
   let selectedMap: MapId = 'crystal-cavern';
   let selectedMode: GameMode = 'gem-grab';
   let selectedBlueSize = 3;
   let selectedRedSize = 3;
-  let shopTab: ShopTab = 'featured';
-  let shopPreviewBrawler: BrawlerId = 'buck';
-  let shopPreviewSkinId: string | null = null;
-  let shopPreviewRingId: string | null = null;
-  let lastBoxRewardText: string | null = null;
-  let lastMatchReward: { coinsEarned: number; gemsEarned: number; milestoneHit: boolean } | null = null;
   let pendingRoomConfig: { mapId: MapId; mode: GameMode; blueSize: number; redSize: number } | null = null;
   let activeMatchMap: MapId = 'crystal-cavern';
   let localMatch: LocalMatchController | null = null;
@@ -89,17 +81,7 @@ function boot(): void {
           online.setFillBots(false);
         }
       }
-      const lobbyBrawler = lobby.slots[mySlot]?.brawlerId ?? selectedBrawler;
-      const desiredSkin = profileClient.getEquippedSkin(lobbyBrawler);
-      const desiredRing = profileClient.getEquippedRing();
-      if (
-        lobby.slots[mySlot] &&
-        ((lobby.slots[mySlot].skinId ?? null) !== desiredSkin ||
-          (lobby.slots[mySlot].ringId ?? null) !== desiredRing)
-      ) {
-        online.pickCosmetics(desiredSkin, desiredRing);
-      }
-      renderer.setPreviewBrawler(lobbyBrawler, lobby.mode ?? 'gem-grab', desiredSkin, desiredRing);
+      renderer.setPreviewBrawler(lobby.slots[mySlot]?.brawlerId ?? selectedBrawler, lobby.mode ?? 'gem-grab');
       screens.renderLobby({
         lobby,
         mySlot,
@@ -107,7 +89,6 @@ function boot(): void {
           sfx.playUiSelect();
           selectedBrawler = id;
           online.pickBrawler(id);
-          online.pickCosmetics(profileClient.getEquippedSkin(id), profileClient.getEquippedRing());
         },
         onSwitchTeam: (team) => {
           sfx.playUiSelect();
@@ -194,114 +175,14 @@ function boot(): void {
     }
   }
 
-  function showShop(): void {
-    mode = 'shop';
-    controls.setActive(false);
-    hud.hide();
-    sfx.playBgm('lobby');
-    renderer.setPreviewBrawler(shopPreviewBrawler, selectedMode, shopPreviewSkinId, shopPreviewRingId);
-
-    screens.renderShop({
-      profile: profileClient.getProfile(),
-      activeTab: shopTab,
-      previewBrawler: shopPreviewBrawler,
-      previewSkinId: shopPreviewSkinId,
-      previewRingId: shopPreviewRingId,
-      lastBoxRewardText,
-      onSelectTab: (tab) => {
-        sfx.playUiSelect();
-        shopTab = tab;
-        showShop();
-      },
-      onPreviewItem: (item, brawlerId, category) => {
-        sfx.playUiSelect();
-        if (category === 'skin' && brawlerId) {
-          shopPreviewBrawler = brawlerId;
-          shopPreviewSkinId = item ? item.id : null;
-        } else if (category === 'ring') {
-          shopPreviewRingId = item ? item.id : null;
-        }
-        showShop();
-      },
-      onBuyItem: async (itemId) => {
-        try {
-          const updated = await profileClient.buyItem(itemId);
-          sfx.playSuperReady();
-          const bought = updated.ownedItems.includes(itemId);
-          if (bought) {
-            screens.showToast('Unlocked & Equipped!', 'info');
-            const skinForPreview = updated.loadout.skins[shopPreviewBrawler] ?? null;
-            shopPreviewSkinId = skinForPreview;
-            shopPreviewRingId = updated.loadout.ring;
-          }
-          showShop();
-        } catch (err) {
-          screens.showToast(err instanceof Error ? err.message : 'Purchase failed', 'error');
-        }
-      },
-      onEquipItem: async (category, itemId, brawlerId) => {
-        try {
-          const updated = await profileClient.equipItem(category, itemId, brawlerId);
-          sfx.playUiSelect();
-          if (category === 'skin' && brawlerId) {
-            shopPreviewBrawler = brawlerId;
-            shopPreviewSkinId = updated.loadout.skins[brawlerId] ?? null;
-          } else if (category === 'ring') {
-            shopPreviewRingId = updated.loadout.ring;
-          }
-          showShop();
-        } catch (err) {
-          screens.showToast(err instanceof Error ? err.message : 'Equip failed', 'error');
-        }
-      },
-      onClaimDaily: async () => {
-        try {
-          await profileClient.claimDaily();
-          sfx.playSuperReady();
-          screens.showToast('Claimed +100 🪙 & +15 💎!', 'info');
-          showShop();
-        } catch (err) {
-          screens.showToast(err instanceof Error ? err.message : 'Daily claim failed', 'error');
-        }
-      },
-      onOpenBox: async () => {
-        try {
-          const reward = await profileClient.openBrawlBox();
-          sfx.playSuperReady();
-          if (reward.rewardType === 'item' && reward.itemName) {
-            lastBoxRewardText = `Brawl Box Unlocked: ${reward.itemName}!`;
-          } else if (reward.rewardType === 'gems') {
-            lastBoxRewardText = `Brawl Box Jackpot: +${reward.gems} 💎 Gems!`;
-          } else {
-            lastBoxRewardText = `Brawl Box Stash: +${reward.coins} 🪙 Coins!`;
-          }
-          showShop();
-        } catch (err) {
-          screens.showToast(err instanceof Error ? err.message : 'Could not open box', 'error');
-        }
-      },
-      onClose: () => {
-        sfx.playUiClick();
-        lastBoxRewardText = null;
-        showHome();
-      },
-    });
-  }
-
   function showHome(): void {
     mode = 'home';
     resultsShown = false;
-    lastMatchReward = null;
     localMatch = null;
     controls.setActive(false);
     hud.hide();
     sfx.playBgm('lobby');
-    renderer.setPreviewBrawler(
-      selectedBrawler,
-      selectedMode,
-      profileClient.getEquippedSkin(selectedBrawler),
-      profileClient.getEquippedRing(),
-    );
+    renderer.setPreviewBrawler(selectedBrawler, selectedMode);
 
     screens.renderHome({
       playerName,
@@ -310,7 +191,6 @@ function boot(): void {
       selectedMode,
       blueSize: selectedBlueSize,
       redSize: selectedRedSize,
-      profile: profileClient.getProfile(),
       sfxMuted: sfx.isSfxMuted(),
       bgmMuted: sfx.isBgmMuted(),
       onToggleSfx: () => {
@@ -347,15 +227,6 @@ function boot(): void {
             sfx.playUiClick();
           },
         );
-      },
-      onOpenShop: () => {
-        sfx.unlock();
-        sfx.playUiClick();
-        shopPreviewBrawler = selectedBrawler;
-        shopPreviewSkinId = profileClient.getEquippedSkin(selectedBrawler);
-        shopPreviewRingId = profileClient.getEquippedRing();
-        lastBoxRewardText = null;
-        showShop();
       },
       onSelectMap: (mapId) => {
         sfx.unlock();
@@ -424,8 +295,6 @@ function boot(): void {
       blueSize: selectedBlueSize,
       redSize: selectedRedSize,
       playerBrawler: selectedBrawler,
-      playerSkinId: profileClient.getEquippedSkin(selectedBrawler),
-      playerRingId: profileClient.getEquippedRing(),
       playerName,
     });
     renderer.loadMap(selectedMap, localMatch.getState().grid, selectedMode);
@@ -447,47 +316,6 @@ function boot(): void {
     if (firstShow) {
       renderer.setResultsScene(state, localSlot);
       sfx.playBgm('victory');
-      const me = state.brawlers[localSlot];
-      if (me) {
-        const outcome: 'victory' | 'defeat' | 'draw' =
-          state.winner === 'draw' ? 'draw' : state.winner === me.team ? 'victory' : 'defeat';
-        void profileClient
-          .claimMatchReward({
-            name: playerName,
-            mode: state.mode,
-            outcome,
-            kills: me.stats.kills,
-            objectives: me.stats.gemsCollected,
-            isStarPlayer: state.starPlayerSlot === localSlot,
-          })
-          .then((res) => {
-            if (res && resultsShown) {
-              lastMatchReward = {
-                coinsEarned: res.coinsEarned,
-                gemsEarned: res.gemsEarned,
-                milestoneHit: res.milestoneHit,
-              };
-              const curLobby = online.getLobby();
-              const curIsHost = Boolean(curLobby && curLobby.hostSlot === online.getMySlot());
-              screens.renderResults({
-                state,
-                localSlot,
-                isOnline,
-                isHost: curIsHost,
-                rewardSummary: lastMatchReward,
-                onPlayAgain: () => {
-                  sfx.playUiClick();
-                  if (isOnline) online.returnToLobby();
-                  else startSoloMatch();
-                },
-                onHome: () => {
-                  sfx.playUiClick();
-                  leaveToHome();
-                },
-              });
-            }
-          });
-      }
     }
     const isHost = Boolean(lobby && lobby.hostSlot === online.getMySlot());
     screens.renderResults({
@@ -495,7 +323,6 @@ function boot(): void {
       localSlot,
       isOnline,
       isHost,
-      rewardSummary: lastMatchReward,
       onPlayAgain: () => {
         sfx.playUiClick();
         if (isOnline) {
@@ -522,9 +349,6 @@ function boot(): void {
   const params = new URLSearchParams(window.location.search);
   const inviteRoom = params.get('room');
   showHome();
-  void profileClient.load(playerName).then(() => {
-    if (mode === 'home') showHome();
-  });
   if (inviteRoom && /^[A-Za-z0-9]{4}$/.test(inviteRoom)) {
     online.connect(inviteRoom.toUpperCase(), playerName);
   }
@@ -535,7 +359,7 @@ function boot(): void {
     const dt = Math.min(0.05, Math.max(0.001, (now - lastTime) / 1000));
     lastTime = now;
 
-    if (mode === 'home' || mode === 'shop' || mode === 'lobby') {
+    if (mode === 'home' || mode === 'lobby') {
       renderer.renderPreview(dt);
     } else if (resultsShown) {
       if (mode === 'online') {

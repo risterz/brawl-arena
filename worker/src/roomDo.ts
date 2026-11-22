@@ -34,8 +34,6 @@ export interface HibernatedSocketMeta {
   name: string;
   slotIndex: number;
   brawlerId: BrawlerId;
-  skinId?: string | null;
-  ringId?: string | null;
   isHost: boolean;
   mapId?: MapId;
   mode?: GameMode;
@@ -49,8 +47,6 @@ interface InternalSlot {
   team: Team;
   name: string;
   brawlerId: BrawlerId;
-  skinId: string | null;
-  ringId: string | null;
   isBot: boolean;
   connected: boolean;
   token: string | null;
@@ -103,8 +99,6 @@ export class RoomManager {
         team: i < 3 ? 'blue' : 'red',
         name: `Bot ${BRAWLERS[brawlerId].name}`,
         brawlerId,
-        skinId: null,
-        ringId: null,
         isBot: true,
         connected: false,
         token: null,
@@ -141,8 +135,6 @@ export class RoomManager {
       team: s.team,
       name: s.name,
       brawlerId: s.brawlerId,
-      skinId: s.skinId,
-      ringId: s.ringId,
       isBot: s.isBot,
       connected: s.connected,
       ready: !s.isBot && s.connected,
@@ -194,8 +186,6 @@ export class RoomManager {
           name: s.name,
           slotIndex: s.slotIndex,
           brawlerId: s.brawlerId,
-          skinId: s.skinId,
-          ringId: s.ringId,
           isHost: s.slotIndex === this.hostSlot,
           mapId: this.mapId,
           mode: this.mode,
@@ -223,8 +213,6 @@ export class RoomManager {
     if (BRAWLERS[meta.brawlerId]) {
       slot.brawlerId = meta.brawlerId;
     }
-    slot.skinId = meta.skinId ?? null;
-    slot.ringId = meta.ringId ?? null;
     slot.socket = ws;
     slot.disconnectTimer = 0;
     this.socketToSlot.set(ws, idx);
@@ -419,8 +407,6 @@ export class RoomManager {
     slot.isBot = true;
     slot.token = null;
     slot.brawlerId = fallbackBrawler;
-    slot.skinId = null;
-    slot.ringId = null;
     slot.name = `Bot ${BRAWLERS[fallbackBrawler].name}`;
 
     if (this.hostSlot === slotIdx) {
@@ -520,10 +506,6 @@ export class RoomManager {
         slot.brawlerId = msg.brawlerId;
         this.broadcast({ type: 'lobby', lobby: this.getLobby() });
       }
-    } else if (msg.type === 'pick_cosmetics') {
-      slot.skinId = typeof msg.skinId === 'string' ? msg.skinId : null;
-      slot.ringId = typeof msg.ringId === 'string' ? msg.ringId : null;
-      this.broadcast({ type: 'lobby', lobby: this.getLobby() });
     } else if (msg.type === 'pick_map') {
       if (slotIdx === this.hostSlot && MAPS[msg.mapId]) {
         this.mapId = msg.mapId;
@@ -563,8 +545,6 @@ export class RoomManager {
     target.token = current.token;
     target.name = current.name;
     target.brawlerId = current.brawlerId;
-    target.skinId = current.skinId;
-    target.ringId = current.ringId;
     target.socket = ws;
 
     const fallbackBrawler = DEFAULT_BOT_BRAWLERS[oldIdx % DEFAULT_BOT_BRAWLERS.length];
@@ -573,8 +553,6 @@ export class RoomManager {
     current.token = null;
     current.name = `Bot ${BRAWLERS[fallbackBrawler].name}`;
     current.brawlerId = fallbackBrawler;
-    current.skinId = null;
-    current.ringId = null;
     current.socket = null;
 
     if (ws) {
@@ -723,8 +701,6 @@ export class RoomManager {
         name: s.name,
         isBot: s.isBot,
         brawlerId: s.brawlerId,
-        skinId: s.isBot ? null : s.skinId,
-        ringId: s.isBot ? null : s.ringId,
       };
     });
 
@@ -916,8 +892,6 @@ export class RoomDurableObject {
             name: meta.name ?? 'Player',
             slotIndex: meta.slotIndex,
             brawlerId: meta.brawlerId ?? 'buck',
-            skinId: meta.skinId ?? null,
-            ringId: meta.ringId ?? null,
             isHost: Boolean(meta.isHost),
             mapId: meta.mapId,
             mode: meta.mode,

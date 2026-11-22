@@ -19,8 +19,6 @@ export interface LobbySlot {
   team: Team;
   name: string;
   brawlerId: BrawlerId;
-  skinId?: string | null;
-  ringId?: string | null;
   isBot: boolean;
   connected: boolean;
   ready: boolean;
@@ -192,7 +190,6 @@ export function serializeSnapshot(
 export type ClientMessage =
   | { type: 'set_name'; name: string }
   | { type: 'pick_brawler'; brawlerId: BrawlerId }
-  | { type: 'pick_cosmetics'; skinId: string | null; ringId: string | null }
   | { type: 'switch_team'; team: Team }
   | { type: 'pick_map'; mapId: MapId }
   | { type: 'pick_mode'; mode: GameMode }

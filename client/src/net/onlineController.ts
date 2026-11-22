@@ -185,10 +185,6 @@ export class OnlineMatchController {
     this.send({ type: 'pick_brawler', brawlerId });
   }
 
-  public pickCosmetics(skinId: string | null, ringId: string | null): void {
-    this.send({ type: 'pick_cosmetics', skinId, ringId });
-  }
-
   public switchTeam(team: Team): void {
     this.send({ type: 'switch_team', team });
   }

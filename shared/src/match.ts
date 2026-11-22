@@ -111,8 +111,6 @@ export class MatchEngine {
         name: slot.name,
         isBot: slot.isBot,
         brawlerId: slot.brawlerId,
-        skinId: slot.skinId ?? null,
-        ringId: slot.ringId ?? null,
         x: spawn.x,
         y: spawn.y,
         vx: 0,

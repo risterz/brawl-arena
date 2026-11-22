@@ -7,4 +7,3 @@ export * from './match';
 export * from './protocol';
 export * from './pathfinding';
 export * from './botAi';
-export * from './shop';
