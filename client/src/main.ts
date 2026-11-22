@@ -161,8 +161,11 @@ function boot(): void {
 
   function syncMatchBgm(state: MatchState, localSlot: number): void {
     if (state.phase === 'ended') {
-      sfx.playBgm(getMatchResultBgmTrack(state, localSlot));
-    } else if (state.countdownTeam !== null || state.phase === 'sudden_death') {
+      // Handled cleanly once by maybeShowResults on match end
+      return;
+    }
+    void localSlot;
+    if (state.countdownTeam !== null || state.phase === 'sudden_death') {
       sfx.playBgm('countdown');
     } else {
       sfx.playBgm(

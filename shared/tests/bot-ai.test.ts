@@ -256,4 +256,62 @@ describe('Bot pathfinding and Gem Grab AI', () => {
     expect(shotsFired).toBeGreaterThan(0);
     expect(blaze.hp).toBeLessThan(blaze.maxHp);
   });
+
+  it('rushes enemy territory and enemy gem carriers when the opposing team leads heavily in gems', () => {
+    const engine = new MatchEngine({ mapId: 'crystal-cavern', slots: allBotSlots() });
+    // Blue leads 15 vs 2 with Blue carrier holding 15 gems deep in Blue half (and hidden / far)
+    const blueCarrier = engine.state.brawlers[0];
+    blueCarrier.gems = 15;
+    blueCarrier.x = 10.5;
+    blueCarrier.y = 26.0;
+    engine.state.brawlers[1].alive = false;
+    engine.state.brawlers[2].alive = false;
+    engine.state.blueGems = 15;
+    engine.state.redGems = 2;
+
+    // Red low-gem bot (slot 3, Golem, 0 gems) starts at Red mid (y = 13.0)
+    const redRusher = engine.state.brawlers[3];
+    redRusher.gems = 0;
+    redRusher.x = 5.5;
+    redRusher.y = 13.0;
+    engine.state.brawlers[4].alive = false;
+    engine.state.brawlers[5].alive = false;
+
+    const ai = new BotController();
+    const input = ai.computeInputs(engine.state, 0.05).get(3)!;
+    // Must push southward (+y) toward Blue's half instead of idling at Red mid (y=13.8)!
+    expect(input.moveY).toBeGreaterThan(0.35);
+  });
+
+  it('keeps high-gem bots careful even when enemy leads heavily: kites close threats and retreats when low HP', () => {
+    const engine = new MatchEngine({ mapId: 'crystal-cavern', slots: allBotSlots() });
+    // Blue leads 16 vs 5, Red carrier (slot 3, Blaze) holds 5 gems on open center-south lane
+    const blueCarrier = engine.state.brawlers[0];
+    blueCarrier.gems = 16;
+    blueCarrier.x = 10.5;
+    blueCarrier.y = 22.0;
+    engine.state.brawlers[1].alive = false;
+    engine.state.brawlers[2].alive = false;
+    engine.state.blueGems = 16;
+    engine.state.redGems = 5;
+
+    const redCarrier = engine.state.brawlers[3];
+    redCarrier.gems = 5;
+    redCarrier.x = 10.5;
+    redCarrier.y = 19.0; // 3 tiles north of Blue threat on open lane
+    redCarrier.hp = redCarrier.maxHp;
+    engine.state.brawlers[4].alive = false;
+    engine.state.brawlers[5].alive = false;
+
+    const ai = new BotController();
+    // 1. Healthy high-gem carrier with enemy 3 tiles away should kite backward (-y toward Red safety) instead of diving in!
+    const kiteInput = ai.computeInputs(engine.state, 0.05).get(3)!;
+    expect(kiteInput.moveY).toBeLessThan(-0.2);
+
+    // 2. Low-HP (35%) high-gem carrier should carefully retreat northward (-y toward Red spawn) to protect its 5 gems!
+    redCarrier.hp = redCarrier.maxHp * 0.35;
+    blueCarrier.y = 25.0; // far away
+    const retreatInput = ai.computeInputs(engine.state, 0.05).get(3)!;
+    expect(retreatInput.moveY).toBeLessThan(-0.3);
+  });
 });

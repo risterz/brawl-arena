@@ -325,16 +325,43 @@ export class BotController {
       const allyCountdown = state.countdownTeam === bot.team;
       const enemyCountdown = Boolean(state.countdownTeam && state.countdownTeam !== bot.team);
 
+      // Compute live team gem totals so bots react dynamically when trailing heavily!
+      let blueGemsLive = 0;
+      let redGemsLive = 0;
+      for (const b of state.brawlers) {
+        if (!b.alive) continue;
+        if (b.team === 'blue') blueGemsLive += b.gems;
+        else redGemsLive += b.gems;
+      }
+      const myTeamGems = Math.max(
+        bot.team === 'blue' ? state.blueGems : state.redGems,
+        bot.team === 'blue' ? blueGemsLive : redGemsLive,
+      );
+      const enemyTeamGems = Math.max(
+        bot.team === 'blue' ? state.redGems : state.blueGems,
+        bot.team === 'blue' ? redGemsLive : blueGemsLive,
+      );
+      const gemDeficit = enemyTeamGems - myTeamGems;
+      const desperateCountdown = enemyCountdown && state.countdownTimer <= 6.5;
+      // Enemy team is leading heavily: countdown active, ahead by 4+ gems, or at 8+ gems & ahead by 3+
+      const enemyLeadingHeavily =
+        enemyCountdown || gemDeficit >= 4 || (enemyTeamGems >= 8 && gemDeficit >= 3);
+      // Carrying 4+ gems ourselves means we must play carefully instead of feeding our gem stash!
+      const heavyCarrier = bot.gems >= 4;
+      const fullRushMode = enemyLeadingHeavily && (!heavyCarrier || desperateCountdown);
+      const carefulRushMode = enemyLeadingHeavily && heavyCarrier && !desperateCountdown;
+
       // Visible enemies only (strictly respects stealth bushes — zero cheating!)
       const visibleEnemies = state.brawlers.filter(
         (e) => e.team !== bot.team && e.alive && isBrawlerVisibleToTeam(state, e, bot.team),
       );
 
-      // Rank combat targets: prioritize enemy gem carriers (especially in countdown), low HP finishers, and close threats
+      // Rank combat targets: prioritize enemy gem carriers (especially when trailing/countdown), low HP finishers, and close threats
       let targetEnemy: BrawlerState | null = null;
       let bestTargetScore = -Infinity;
       let nearestEnemy: BrawlerState | null = null;
       let nearestEnemyDist = Infinity;
+      let closeThreatCount = 0;
 
       for (const e of visibleEnemies) {
         const dist = Math.hypot(e.x - bot.x, e.y - bot.y);
@@ -342,7 +369,12 @@ export class BotController {
           nearestEnemyDist = dist;
           nearestEnemy = e;
         }
-        const gemWeight = enemyCountdown ? e.gems * 7.5 : e.gems * 2.4;
+        if (dist < 4.8) closeThreatCount++;
+        const gemWeight = enemyCountdown
+          ? e.gems * 8.0
+          : enemyLeadingHeavily
+            ? e.gems * 5.2
+            : e.gems * 2.4;
         const lowHpBonus = (1 - e.hp / e.maxHp) * 6.5;
         const killableBonus = e.hp <= cfg.attack.damage * 1.45 ? 5.5 : 0;
         const losBonus = cfg.attack.lobbed || hasLineOfSight(state.grid, bot, e) ? 2.8 : -2.5;
@@ -358,19 +390,24 @@ export class BotController {
         }
       }
 
-      // Retreat decision: protect gems or trigger passive 3s HP regen
-      const urgentCountdownDefense = enemyCountdown && (!isCarrier || bot.gems < 4);
-      const shouldRetreat =
-        !urgentCountdownDefense &&
-        ((isCarrier && (bot.gems >= 5 || allyCountdown || hpRatio < 0.42)) ||
-          (bot.gems >= 6 && hpRatio < 0.58) ||
-          hpRatio < 0.30);
+      // Retreat decision:
+      // - Full rush mode (trailing heavily with <4 gems, or final seconds of enemy countdown): only back off if critically low HP.
+      // - Careful rush mode (trailing heavily while carrying 4+ gems): don't hide passively at full HP,
+      //   but retreat to protect our gem stash if HP drops below 48% or mobbed up close!
+      // - Normal mode: protect carrier's 5+ gem stash or trigger passive 3s HP regen.
+      const shouldRetreat = fullRushMode
+        ? !desperateCountdown && hpRatio < 0.22
+        : carefulRushMode
+          ? hpRatio < 0.48 || (nearestEnemyDist < 4.2 && hpRatio < 0.64) || (closeThreatCount >= 2 && hpRatio < 0.72)
+          : (isCarrier && (bot.gems >= 5 || allyCountdown || hpRatio < 0.42)) ||
+            (bot.gems >= 6 && hpRatio < 0.58) ||
+            hpRatio < 0.30;
 
       // Decide strategic destination
       let goal: Vec2;
       if (shouldRetreat) {
         const safeBush =
-          hpRatio < 0.42 && !allyCountdown ? findNearestSafeBush(state, bot, visibleEnemies, 5.5) : null;
+          hpRatio < 0.45 && !allyCountdown ? findNearestSafeBush(state, bot, visibleEnemies, 5.5) : null;
         if (safeBush && (bot.team === 'blue' ? safeBush.y > bot.y - 1.5 : safeBush.y < bot.y + 1.5)) {
           goal = safeBush;
         } else {
@@ -380,17 +417,20 @@ export class BotController {
       } else {
         // Evaluate loose gems on ground with threat awareness (skip suicide grabs!)
         let bestGem: Vec2 | null = null;
-        let bestGemScore = isCarrier ? 17.5 : 6.8;
+        let bestGemScore = fullRushMode && enemyCountdown ? 3.5 : isCarrier ? 17.5 : 6.8;
         for (const g of state.gems) {
           const d = Math.hypot(g.x - bot.x, g.y - bot.y);
           if (d > bestGemScore) continue;
           let threatPenalty = 0;
           for (const e of visibleEnemies) {
             const ed = Math.hypot(e.x - g.x, e.y - g.y);
-            if (ed < 4.5) threatPenalty += (4.5 - ed) * (hpRatio < 0.55 ? 2.4 : 1.1);
+            if (ed < 4.8) {
+              threatPenalty += (4.8 - ed) * (hpRatio < 0.55 || heavyCarrier ? 2.6 : 1.1);
+            }
           }
-          // Ignore threat penalty slightly if grabbing stops enemy countdown!
-          if (enemyCountdown) threatPenalty *= 0.35;
+          // Heavy carriers avoid risky gem traps; low-gem rushers ignore light threat if stopping countdown
+          if (carefulRushMode) threatPenalty *= 1.85;
+          else if (fullRushMode && enemyCountdown) threatPenalty *= 0.35;
           const gScore = d + threatPenalty;
           if (gScore < bestGemScore) {
             bestGemScore = gScore;
@@ -400,9 +440,32 @@ export class BotController {
 
         if (bestGem) {
           goal = bestGem;
-        } else if (enemyCountdown && targetEnemy) {
-          // Aggressive all-in hunt on enemy gem carrier during their countdown
-          goal = { x: targetEnemy.x, y: targetEnemy.y };
+        } else if (fullRushMode && targetEnemy) {
+          // Aggressive rush onto enemy gem carrier / closest threat when enemy is leading heavily!
+          const hasDirectLos = Boolean(cfg.attack.lobbed) || hasLineOfSight(state.grid, bot, targetEnemy);
+          const peekSpot = !hasDirectLos
+            ? findPeekPoint(state, bot, targetEnemy, cfg.attack.range, mem.strafeSign)
+            : null;
+          if (targetEnemy.gems >= 3 || enemyCountdown || !hasDirectLos) {
+            goal = peekSpot ?? { x: targetEnemy.x, y: targetEnemy.y };
+          } else {
+            // Press forward tighter (~25% closer than normal) to force enemy back and reclaim map control
+            const rushFactor = bot.brawlerId === 'golem' ? 0.32 : bot.brawlerId === 'buck' ? 0.44 : 0.62;
+            const rushDist = cfg.attack.range * rushFactor;
+            const dx = bot.x - targetEnemy.x;
+            const dy = bot.y - targetEnemy.y;
+            const d = Math.max(0.1, Math.hypot(dx, dy));
+            goal = {
+              x: clamp(targetEnemy.x + (dx / d) * rushDist, 2, state.width - 2),
+              y: clamp(targetEnemy.y + (dy / d) * rushDist, 2, state.height - 2),
+            };
+          }
+        } else if (fullRushMode && !targetEnemy) {
+          // No visible enemy while enemy leads heavily (e.g. enemy carrier hiding in backline/bush):
+          // Push deep into enemy half across lanes to flush out and hunt enemy gem carriers!
+          const enemyPushY = bot.team === 'blue' ? 9.5 : 23.5;
+          const laneX = bot.slotIndex % 3 === 0 ? 10.5 : bot.slotIndex % 3 === 1 ? 5.5 : 15.5;
+          goal = { x: laneX, y: enemyPushY };
         } else if (!isCarrier && teamCarrier && (allyCountdown || teamCarrier.gems >= 5)) {
           // Bodyguard / Escort positioning between our carrier and threats (or mid!)
           const guardTarget = nearestEnemy ?? { x: map.minePos.x, y: map.minePos.y };
@@ -426,7 +489,7 @@ export class BotController {
             y: clamp(anchor.y + backY, 2, state.height - 2),
           };
         } else if (targetEnemy) {
-          // Engage visible enemy aggressively — if Gem Mine or crates block LOS, step sideways to peek!
+          // Engage visible enemy — if Gem Mine or crates block LOS, step sideways to peek!
           const hasDirectLos = Boolean(cfg.attack.lobbed) || hasLineOfSight(state.grid, bot, targetEnemy);
           const peekSpot = !hasDirectLos
             ? findPeekPoint(state, bot, targetEnemy, cfg.attack.range, mem.strafeSign)
@@ -434,11 +497,11 @@ export class BotController {
           if (peekSpot) {
             goal = peekSpot;
           } else if (!hasDirectLos) {
-            // No nearby peek angle: advance around cover via BFS pathfinding until line-of-sight opens!
+            // Careful high-gem carriers still wrap around cover cautiously; others advance directly
             goal = { x: targetEnemy.x, y: targetEnemy.y };
           } else {
-            // Role-tuned ideal engagement spacing (snipers kite far, throwers keep safe arc, tanks rush in)
-            const idealFactor =
+            // Role-tuned ideal engagement spacing; high-gem carriers in carefulRushMode stay near safe max range!
+            let idealFactor =
               bot.brawlerId === 'golem'
                 ? 0.42
                 : bot.brawlerId === 'buck'
@@ -448,6 +511,9 @@ export class BotController {
                     : bot.brawlerId === 'mort'
                       ? 0.80
                       : 0.72;
+            if (carefulRushMode) {
+              idealFactor = Math.max(idealFactor, 0.88);
+            }
             const idealDist = cfg.attack.range * idealFactor;
             const dx = bot.x - targetEnemy.x;
             const dy = bot.y - targetEnemy.y;
@@ -461,6 +527,11 @@ export class BotController {
               y: clamp(targetEnemy.y + (dy / d) * idealDist, 2, state.height - 2),
             };
           }
+        } else if (carefulRushMode) {
+          // Heavy carrier when enemy leads heavily & hidden: advance cautiously to mid-enemy border to support team without diving blind!
+          const carefulPushY = bot.team === 'blue' ? 14.5 : 18.5;
+          const flankX = bot.slotIndex % 2 === 0 ? map.minePos.x - 2.6 : map.minePos.x + 2.6;
+          goal = { x: flankX, y: carefulPushY };
         } else if (isCarrier) {
           // Hold slightly off-center from the Gem Mine so carrier watches an open firing lane
           const flankX = bot.slotIndex % 2 === 0 ? map.minePos.x - 2.1 : map.minePos.x + 2.1;
@@ -489,17 +560,20 @@ export class BotController {
         moveY = 0;
       }
 
-      // Active kiting for long-range squishes (Vex / Mort / Blaze) ONLY when close enemy actually threatens us (LOS or rush < 3.4 tiles)!
-      if (!shouldRetreat && nearestEnemy) {
-        const kiteTrigger =
+      // Active kiting for long-range squishes (Vex / Mort / Blaze) AND careful high-gem carriers!
+      if (!shouldRetreat && !fullRushMode && nearestEnemy) {
+        let kiteTrigger =
           bot.brawlerId === 'vex' ? 6.0 : bot.brawlerId === 'mort' ? 4.4 : bot.brawlerId === 'blaze' ? 3.8 : 0;
+        if (carefulRushMode || heavyCarrier) {
+          kiteTrigger = Math.max(kiteTrigger, Math.max(3.4, Math.min(5.4, cfg.attack.range * 0.72)));
+        }
         const enemyHasAngle =
           nearestEnemyDist < 4.0 || hasLineOfSight(state.grid, bot, nearestEnemy);
         if (kiteTrigger > 0 && nearestEnemyDist < kiteTrigger && enemyHasAngle) {
           const kx = bot.x - nearestEnemy.x;
           const ky = bot.y - nearestEnemy.y;
           const kd = Math.max(0.1, Math.hypot(kx, ky));
-          const kiteWeight = bot.brawlerId === 'vex' ? 1.45 : 1.05;
+          const kiteWeight = carefulRushMode ? 1.5 : bot.brawlerId === 'vex' ? 1.45 : 1.05;
           moveX = moveX * 0.35 + (kx / kd) * kiteWeight;
           moveY = moveY * 0.35 + (ky / kd) * kiteWeight;
         }
@@ -518,15 +592,16 @@ export class BotController {
         }
       }
 
-      // Active hazard avoidance (dodge enemy projectiles, acid puddles, and bombs — takes priority over casual pathing!)
+      // Active hazard avoidance (dodge enemy projectiles, acid puddles, and bombs — extra careful when carrying many gems!)
       const avoid = computeHazardAvoidance(state, bot);
-      const avoidMag = Math.hypot(avoid.x, avoid.y);
+      const avoidScale = heavyCarrier ? 1.35 : 1.0;
+      const avoidMag = Math.hypot(avoid.x, avoid.y) * avoidScale;
       if (avoidMag > 0.25) {
-        moveX = moveX * 0.3 + avoid.x;
-        moveY = moveY * 0.3 + avoid.y;
+        moveX = moveX * 0.3 + avoid.x * avoidScale;
+        moveY = moveY * 0.3 + avoid.y * avoidScale;
       } else {
-        moveX += avoid.x;
-        moveY += avoid.y;
+        moveX += avoid.x * avoidScale;
+        moveY += avoid.y * avoidScale;
       }
 
       // Anti-stuck detector (only when actually far from goal and blocked on a corner, never when settled at home)
@@ -615,7 +690,9 @@ export class BotController {
             }
           } else if (bot.brawlerId === 'golem') {
             // Golem Meteor Slam: leap onto enemy carrier, clustered enemies, or low-HP target within range!
-            if (dist <= cfg.superAttack.range * 0.94 && (dist >= 2.2 || targetEnemy.gems >= 3 || targetEnemy.hp < 2200)) {
+            // Avoid suicide-diving into multiple enemies if carrying 4+ gems (unless final seconds of enemy countdown)
+            const riskyCarrierDive = carefulRushMode && closeThreatCount >= 2;
+            if (!riskyCarrierDive && dist <= cfg.superAttack.range * 0.94 && (dist >= 2.2 || targetEnemy.gems >= 3 || targetEnemy.hp < 2200)) {
               superFire = true;
             }
           } else if (bot.brawlerId === 'mort') {
@@ -644,7 +721,8 @@ export class BotController {
 
         // Ammo discipline: avoid spamming the last shot at low-percentage extreme range
         const sweetSpotRange = cfg.attack.range * (bot.brawlerId === 'buck' ? 0.78 : 0.86);
-        const worthSpendingLastAmmo = dist <= sweetSpotRange || isFinisher || targetEnemy.gems >= 3 || enemyCountdown;
+        const worthSpendingLastAmmo =
+          dist <= sweetSpotRange || isFinisher || targetEnemy.gems >= 3 || enemyLeadingHeavily;
         const hasEnoughAmmo = bot.ammo >= (worthSpendingLastAmmo ? 1.0 : 1.75);
 
         if (!superFire && !holdForRegen && hasEnoughAmmo && dist <= cfg.attack.range * 0.97 && canShoot) {

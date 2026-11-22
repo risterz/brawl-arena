@@ -85,6 +85,7 @@ const SFX_GAIN: Partial<Record<SfxKey, number>> = {
 };
 
 const BGM_VOLUME = 0.30;
+const WEB_AUDIO_PRELOAD_BGM: BgmTrack[] = ['victory', 'defeat'];
 
 export class SfxEngine {
   private ctx: AudioContext | null = null;
@@ -97,6 +98,12 @@ export class SfxEngine {
   private lastPlayedMs = new Map<SfxKey, number>();
 
   private bgmElements = new Map<BgmTrack, HTMLAudioElement>();
+  private bgmBuffers = new Map<BgmTrack, AudioBuffer>();
+  private bgmRawBytes = new Map<BgmTrack, ArrayBuffer>();
+  private bgmSourceNode: AudioBufferSourceNode | null = null;
+  private bgmSourceTrack: BgmTrack | null = null;
+  private bgmGainNode: GainNode | null = null;
+  private pendingHtmlTrack: BgmTrack | null = null;
   private desiredBgm: BgmTrack | null = null;
   private activeBgm: BgmTrack | null = null;
 
@@ -142,6 +149,33 @@ export class SfxEngine {
         })
         .catch(() => undefined);
     }
+    // Preload result tracks (victory & defeat) into Web Audio buffers so they play
+    // instantaneously when a match ends with zero browser HTMLAudio autoplay blocks.
+    for (const track of WEB_AUDIO_PRELOAD_BGM) {
+      void fetch(BGM_URLS[track])
+        .then((res) => (res.ok ? res.arrayBuffer() : null))
+        .then((buf) => {
+          if (!buf) return;
+          this.bgmRawBytes.set(track, buf);
+          if (this.ctx) {
+            void this.decodeBgmTrack(track, buf);
+          }
+        })
+        .catch(() => undefined);
+    }
+  }
+
+  private async decodeBgmTrack(track: BgmTrack, raw: ArrayBuffer): Promise<void> {
+    if (!this.ctx || this.bgmBuffers.has(track)) return;
+    try {
+      const decoded = await this.ctx.decodeAudioData(raw.slice(0));
+      this.bgmBuffers.set(track, decoded);
+      if (this.desiredBgm === track && this.unlocked && !this.bgmMuted && this.bgmSourceTrack !== track) {
+        this.syncBgmPlayback();
+      }
+    } catch {
+      // fallback to HTMLAudioElement if decodeAudioData fails
+    }
   }
 
   private async decodeKey(key: SfxKey, raw: ArrayBuffer): Promise<void> {
@@ -161,6 +195,11 @@ export class SfxEngine {
       for (const [key, raw] of this.rawBytes) {
         if (!this.buffers.has(key)) {
           void this.decodeKey(key, raw);
+        }
+      }
+      for (const [track, raw] of this.bgmRawBytes) {
+        if (!this.bgmBuffers.has(track)) {
+          void this.decodeBgmTrack(track, raw);
         }
       }
     }
@@ -224,11 +263,34 @@ export class SfxEngine {
     return audio;
   }
 
+  private stopWebAudioBgm(): void {
+    if (this.bgmSourceNode) {
+      try {
+        this.bgmSourceNode.stop();
+        this.bgmSourceNode.disconnect();
+      } catch {
+        // already stopped
+      }
+      this.bgmSourceNode = null;
+    }
+    if (this.bgmGainNode) {
+      try {
+        this.bgmGainNode.disconnect();
+      } catch {
+        // ignore
+      }
+      this.bgmGainNode = null;
+    }
+    this.bgmSourceTrack = null;
+  }
+
   private syncBgmPlayback(): void {
     if (typeof window === 'undefined') return;
-    // Pause any non-desired tracks
-    for (const [track, audio] of this.bgmElements) {
-      if (track !== this.desiredBgm || this.bgmMuted || !this.unlocked) {
+
+    if (!this.desiredBgm || this.bgmMuted || !this.unlocked) {
+      this.stopWebAudioBgm();
+      this.pendingHtmlTrack = null;
+      for (const [track, audio] of this.bgmElements) {
         if (!audio.paused) {
           audio.pause();
         }
@@ -236,27 +298,78 @@ export class SfxEngine {
           audio.currentTime = 0;
         }
       }
-    }
-
-    if (!this.desiredBgm || this.bgmMuted || !this.unlocked) {
       this.activeBgm = null;
       return;
     }
 
-    const audio = this.getBgmAudio(this.desiredBgm);
+    const desired = this.desiredBgm;
+    const decodedBgm = this.bgmBuffers.get(desired);
+    const ctx = decodedBgm ? this.ensureContext() : null;
+
+    // Prefer already-unlocked Web Audio buffer playback when decoded (bulletproof for Victory/Defeat!)
+    if (decodedBgm && ctx) {
+      this.pendingHtmlTrack = null;
+      for (const [, audio] of this.bgmElements) {
+        if (!audio.paused) {
+          audio.pause();
+        }
+        audio.currentTime = 0;
+      }
+      if (this.bgmSourceTrack === desired && this.bgmSourceNode && this.bgmGainNode) {
+        this.bgmGainNode.gain.value = BGM_VOLUME;
+        this.activeBgm = desired;
+        return;
+      }
+      this.stopWebAudioBgm();
+      const src = ctx.createBufferSource();
+      src.buffer = decodedBgm;
+      src.loop = true;
+      const gain = ctx.createGain();
+      gain.gain.value = BGM_VOLUME;
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      src.start(0);
+      this.bgmSourceNode = src;
+      this.bgmGainNode = gain;
+      this.bgmSourceTrack = desired;
+      this.activeBgm = desired;
+      return;
+    }
+
+    // Streaming HTMLAudioElement playback for longer in-game BGM tracks (or fallback while decoding)
+    this.stopWebAudioBgm();
+    for (const [track, audio] of this.bgmElements) {
+      if (track !== desired) {
+        if (!audio.paused) {
+          audio.pause();
+        }
+        audio.currentTime = 0;
+      }
+    }
+
+    const audio = this.getBgmAudio(desired);
     if (!audio) return;
     audio.volume = BGM_VOLUME;
     if (audio.paused) {
-      if (this.activeBgm !== this.desiredBgm) {
+      if (this.pendingHtmlTrack === desired) return;
+      if (this.activeBgm !== desired) {
         audio.currentTime = 0;
       }
+      this.pendingHtmlTrack = desired;
       void audio
         .play()
         .then(() => {
-          this.activeBgm = this.desiredBgm;
+          if (this.desiredBgm === desired && !this.bgmMuted) {
+            this.activeBgm = desired;
+          }
         })
         .catch(() => {
-          // Will start automatically once user interacts (unlock)
+          // Will start automatically once user interacts or Web Audio buffer finishes decoding
+        })
+        .finally(() => {
+          if (this.pendingHtmlTrack === desired) {
+            this.pendingHtmlTrack = null;
+          }
         });
     }
   }
