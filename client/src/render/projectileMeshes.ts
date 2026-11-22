@@ -538,6 +538,34 @@ export function createProjectileVisual(spec: ProjectileVisualSpec): THREE.Group 
     return grp;
   }
 
+  if (spec.brawlerId === 'kage') {
+    const outerColor = spec.team === 'blue' ? 0x1b3b4b : 0x4a1228;
+    const coreColor = spec.team === 'blue' ? 0xff2e63 : 0xff5a7a;
+    const outerBlade = new THREE.Mesh(
+      getCrescentBladeGeo(),
+      new THREE.MeshToonMaterial({ color: outerColor, emissive: 0x3b0820 }),
+    );
+    const innerBlade = new THREE.Mesh(
+      getCrescentBladeGeo(),
+      new THREE.MeshBasicMaterial({ color: coreColor }),
+    );
+    innerBlade.scale.set(0.72, 1.18, 0.78);
+    innerBlade.position.x = 0.06;
+    const trail = new THREE.Mesh(
+      getTracerConeGeo(),
+      new THREE.MeshBasicMaterial({
+        color: coreColor,
+        transparent: true,
+        opacity: 0.66,
+        side: THREE.DoubleSide,
+      }),
+    );
+    trail.scale.set(spec.isSuper ? 1.15 : 0.75, spec.isSuper ? 1.45 : 0.95, spec.isSuper ? 1.45 : 0.95);
+    grp.add(outerBlade, innerBlade, trail);
+    grp.scale.setScalar(spec.isSuper ? 1.55 : 0.9);
+    return grp;
+  }
+
   // Lumi: Blender 3D music note + curved acoustic wave crescent
   const noteColor = spec.isHeal ? 0x4dffaa : spec.team === 'blue' ? 0xff4dc4 : 0xff5a6e;
   const arcColor = spec.isHeal ? 0xb8ffdf : teamTint;

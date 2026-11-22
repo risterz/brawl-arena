@@ -37,6 +37,14 @@ describe('Sculpted 3D projectile, bomb, crystal, flame, and heal meshes', () => 
         expect(visual.name).toContain(b.id);
       }
     }
+    const kageSuper = createProjectileVisual({
+      brawlerId: 'kage',
+      team: 'blue',
+      isSuper: true,
+      isHeal: false,
+      radius: 0.62,
+    });
+    expect(kageSuper.children.length).toBeGreaterThanOrEqual(3);
   });
 
   it('builds a cartoon iron bomb with fuse and flame tip, a faceted gem crystal, a teardrop flame, and a 3D heal cross', () => {

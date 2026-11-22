@@ -22,6 +22,7 @@ export type SfxKey =
   | 'golem'
   | 'mort'
   | 'lumi'
+  | 'kage'
   | 'super_cast'
   | 'super_ready'
   | 'hit'
@@ -44,13 +45,14 @@ export const BGM_URLS: Record<BgmTrack, string> = {
   defeat: '/audio/bgm_defeat.mp3',
 };
 
-const SFX_URLS: Record<SfxKey, string> = {
+export const SFX_URLS: Record<SfxKey, string> = {
   buck: '/audio/sfx_buck.mp3',
   vex: '/audio/sfx_vex.mp3',
   blaze: '/audio/sfx_blaze.mp3',
   golem: '/audio/sfx_golem.mp3',
   mort: '/audio/sfx_mort.mp3',
   lumi: '/audio/sfx_lumi.mp3',
+  kage: '/audio/sfx_kage.mp3',
   super_cast: '/audio/sfx_super_cast.mp3',
   super_ready: '/audio/sfx_super_ready.mp3',
   hit: '/audio/sfx_hit.mp3',
@@ -71,6 +73,7 @@ const SFX_GAIN: Partial<Record<SfxKey, number>> = {
   golem: 0.44,
   mort: 0.26,
   lumi: 0.34,
+  kage: 0.40,
   super_cast: 0.50,
   super_ready: 0.46,
   hit: 0.24,

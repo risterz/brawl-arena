@@ -414,6 +414,34 @@ export function createBrawlerMesh(
     headStock.position.set(1.02, 0.63, -0.06);
     headStock.rotation.y = 0.32;
     bodyGroup.add(headStock);
+  } else if (brawlerId === 'kage') {
+    // Shinobi hood, crimson headband & trailing scarf, glowing eyes, and curved katana
+    const hood = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10), primaryMat);
+    hood.position.y = 1.07;
+    bodyGroup.add(hood);
+    const headband = new THREE.Mesh(new THREE.TorusGeometry(0.29, 0.035, 8, 16), accentMat);
+    headband.rotation.x = Math.PI / 2;
+    headband.position.y = 1.24;
+    bodyGroup.add(headband);
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.11, 0.36), addMat('#ff2e63', 0x8a0024));
+    visor.position.set(0.24, 1.08, 0);
+    bodyGroup.add(visor);
+    const scarf = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.08, 0.16), accentMat);
+    scarf.position.set(-0.38, 0.86, 0);
+    scarf.rotation.z = 0.35;
+    bodyGroup.add(scarf);
+    const tsuba = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.16, 0.16), addMat('#f2bc3d'));
+    tsuba.position.set(0.36, 0.64, 0.24);
+    bodyGroup.add(tsuba);
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.08, 0.04), steelMat);
+    blade.position.set(0.78, 0.70, 0.28);
+    blade.rotation.z = 0.16;
+    blade.castShadow = true;
+    bodyGroup.add(blade);
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.03, 0.045), addMat('#ff2e63', 0xaa0033));
+    edge.position.set(0.78, 0.745, 0.28);
+    edge.rotation.z = 0.16;
+    bodyGroup.add(edge);
   }
 
   return {

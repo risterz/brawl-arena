@@ -123,6 +123,39 @@ export class VfxManager {
     }
   }
 
+  /** Crimson-and-indigo katana slash burst for Kage Shadow Dash and Phantom Slash cast. */
+  public spawnSlashBurst(x: number, y: number, angle: number, isSuper: boolean): void {
+    const count = isSuper ? 10 : 7;
+    const spread = isSuper ? 1.35 : 1.05;
+    for (let i = 0; i < count; i++) {
+      const t = i / (count - 1) - 0.5;
+      const a = angle + t * spread;
+      const spd = (isSuper ? 7.4 : 5.8) + Math.random() * 2.4;
+      const color = i % 2 === 0 ? 0xff2e63 : 0x45d6ff;
+      const mesh = new THREE.Mesh(
+        this.sparkGeo,
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.94 }),
+      );
+      mesh.position.set(x + Math.cos(angle) * 0.35, 0.65, y + Math.sin(angle) * 0.35);
+      mesh.rotation.y = -a;
+      mesh.scale.setScalar(isSuper ? 1.35 : 0.95);
+      this.group.add(mesh);
+      this.particles.push({
+        mesh,
+        vx: Math.cos(a) * spd,
+        vy: 0.4 + Math.random() * 0.9,
+        vz: Math.sin(a) * spd,
+        life: isSuper ? 0.28 : 0.20,
+        maxLife: isSuper ? 0.28 : 0.20,
+        gravity: 2.0,
+        spin: 0,
+        growRate: -1.1,
+        kind: 'spark',
+      });
+    }
+    this.spawnShockRing(x, y, 0xff2e63, isSuper ? 3.2 : 1.9, isSuper ? 0.28 : 0.18);
+  }
+
   /** Shattered wooden planks + fiery burst ring when cover walls break. */
   public spawnWallRubble(tx: number, ty: number): void {
     const cx = tx + 0.5;
@@ -279,7 +312,9 @@ export class VfxManager {
     }
     this.telegraphGroup.visible = true;
 
-    const clipToWalls = Boolean(grid && !input.spec.isHeal && !input.spec.lobbed && !input.spec.isLeap);
+    const clipToWalls = Boolean(
+      grid && !input.spec.isHeal && !input.spec.lobbed && !input.spec.isLeap && !input.spec.passesWalls,
+    );
     if (clipToWalls && grid && (input.spec.shape === 'cone' || input.spec.shape === 'arc')) {
       // Dynamic wall-clipped shotgun/arc fan so aim cone never shines through solid crates!
       const spread = Math.max(0.35, input.spec.spreadRad);

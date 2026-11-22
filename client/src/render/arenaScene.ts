@@ -911,6 +911,8 @@ export class ArenaRenderer {
       } else if (ev.type === 'attack') {
         if (ev.brawlerId === 'buck' || ev.brawlerId === 'blaze' || ev.brawlerId === 'vex') {
           this.vfx.spawnMuzzleFlash(ev.x, ev.y, ev.angle, ev.isSuper);
+        } else if (ev.brawlerId === 'kage') {
+          this.vfx.spawnSlashBurst(ev.x, ev.y, ev.angle, ev.isSuper);
         }
         if (ev.isSuper) {
           this.triggerShake(0.18, 0.16);
@@ -970,15 +972,15 @@ export class ArenaRenderer {
 
       entry.visual.root.position.set(b.x, 0, b.y);
       entry.visual.bodyGroup.rotation.y = -b.facing;
-      entry.visual.bodyGroup.rotation.z = b.tackleTimer > 0 ? -0.28 : 0;
+      entry.visual.bodyGroup.rotation.z = b.dash ? -0.34 : b.tackleTimer > 0 ? -0.28 : 0;
 
       const moving = Math.hypot(b.vx, b.vy) > 0.25;
       if (entry.visual.hasAnimations) {
-        entry.visual.updateAnimation(dt, moving && !b.leap, b.recoilTimer > 0.14);
+        entry.visual.updateAnimation(dt, moving && !b.leap && !b.dash, b.recoilTimer > 0.14);
         entry.visual.bodyGroup.position.y = heightY;
         entry.visual.bodyGroup.scale.set(1, 1, 1);
       } else {
-        const walkBob = moving && !b.leap ? Math.abs(Math.sin(this.clock * 12 + b.slotIndex)) * 0.1 : 0;
+        const walkBob = moving && !b.leap && !b.dash ? Math.abs(Math.sin(this.clock * 12 + b.slotIndex)) * 0.1 : 0;
         const recoilSquash = b.recoilTimer > 0 ? 1 + (b.recoilTimer / 0.22) * 0.14 : 1;
         entry.visual.bodyGroup.position.y = heightY + walkBob;
         entry.visual.bodyGroup.scale.set(recoilSquash, 1 / Math.sqrt(recoilSquash), recoilSquash);

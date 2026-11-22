@@ -22,3 +22,4 @@ All background music (BGM) and sound effects (SFX) in `client/public/audio/` are
 - `sfx_buck.mp3`, `sfx_vex.mp3`, `sfx_blaze.mp3`, `sfx_golem.mp3`, `sfx_mort.mp3`, `sfx_lumi.mp3`, `sfx_super_cast.mp3`, `sfx_super_ready.mp3`, `sfx_hit.mp3`, `sfx_heal.mp3`, `sfx_gem.mp3`, `sfx_wall_break.mp3`, `sfx_kill.mp3`, `sfx_countdown.mp3`, `sfx_match_end.mp3`, `sfx_ui_click.mp3`, `sfx_ui_select.mp3`
 - Source: **The Essential Retro Video Game Sound Effects Collection [512 sounds]** by Juhani Junkala / SubspaceAudio (CC0)
   - https://opengameart.org/content/512-sound-effects-8-bit-style
+- `sfx_kage.mp3` — Custom procedural retro katana-whoosh SFX generated for Brawl Arena (CC0 / Public Domain)

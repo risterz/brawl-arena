@@ -3,6 +3,7 @@ import {
   BRAWLERS,
   ClientMessage,
   createGridCopy,
+  DashState,
   GameMode,
   LobbyState,
   MAP_HEIGHT,
@@ -60,6 +61,7 @@ export class OnlineMatchController {
   private lobby: LobbyState | null = null;
   private state: MatchState | null = null;
   private snapBuffer: TimedSnapshot[] = [];
+  private latestLocalDash: DashState | null = null;
   private predX = 0;
   private predY = 0;
   private predInit = false;
@@ -101,6 +103,7 @@ export class OnlineMatchController {
     this.intentionalClose = false;
     this.throttle.reset();
     this.snapBuffer = [];
+    this.latestLocalDash = null;
     this.predInit = false;
 
     const token = getOrCreateToken(code);
@@ -169,6 +172,17 @@ export class OnlineMatchController {
     this.state = null;
     this.lobby = null;
     this.snapBuffer = [];
+    this.latestLocalDash = null;
+  }
+
+  public ingestSnapshotForTest(snap: MatchSnapshot, timeMs: number, mySlot?: number): void {
+    if (typeof mySlot === 'number') {
+      this.mySlot = mySlot;
+      this.myTeam = snap.brawlers[mySlot]?.team ?? 'blue';
+    }
+    this.snapBuffer.push({ timeMs, snapshot: snap });
+    if (this.snapBuffer.length > 10) this.snapBuffer.shift();
+    this.applySnapshotMetadata(snap);
   }
 
   private send(msg: ClientMessage): void {
@@ -226,6 +240,9 @@ export class OnlineMatchController {
       this.predX = me.x;
       this.predY = me.y;
       this.predInit = true;
+      this.latestLocalDash = me.dash ? { ...me.dash } : null;
+    } else {
+      this.latestLocalDash = null;
     }
     return {
       mapId: snap.mapId,
@@ -286,26 +303,31 @@ export class OnlineMatchController {
     // Reconcile local prediction gently against authoritative server
     const srvMe = snap.brawlers[this.mySlot];
     if (srvMe) {
+      this.latestLocalDash = srvMe.alive && !srvMe.leap && srvMe.dash ? { ...srvMe.dash } : null;
       if (!this.predInit || !srvMe.alive || srvMe.leap) {
         this.predX = srvMe.x;
         this.predY = srvMe.y;
         this.predInit = true;
       } else {
         const drift = Math.hypot(srvMe.x - this.predX, srvMe.y - this.predY);
+        const blend = srvMe.dash ? 0.45 : 0.35;
+        const threshold = srvMe.dash ? 0.12 : 0.15;
         if (drift > 2.2) {
           this.predX = srvMe.x;
           this.predY = srvMe.y;
-        } else if (drift > 0.15) {
-          this.predX += (srvMe.x - this.predX) * 0.35;
-          this.predY += (srvMe.y - this.predY) * 0.35;
+        } else if (drift > threshold) {
+          this.predX += (srvMe.x - this.predX) * blend;
+          this.predY += (srvMe.y - this.predY) * blend;
         }
       }
+    } else {
+      this.latestLocalDash = null;
     }
   }
 
-  public tick(dt: number, localInput: PlayerInput): MatchState | null {
+  public tick(dt: number, localInput: PlayerInput, nowMs?: number): MatchState | null {
     if (!this.state) return null;
-    const now = performance.now();
+    const now = nowMs ?? performance.now();
 
     if (this.state.phase !== 'ended' && this.throttle.shouldSend(localInput, now)) {
       this.send({ type: 'input', input: quantizeInput(localInput) });
@@ -369,28 +391,50 @@ export class OnlineMatchController {
       this.state.projectiles = only.projectiles.map((p) => ({ ...p }));
     }
 
-    // Predict local player movement smoothly at 60fps
+    // Predict local player movement smoothly at 60fps (or smooth authoritative dash velocity immediately!)
     const me = this.state.brawlers[this.mySlot];
+    if (me) {
+      me.dash = this.latestLocalDash ? { ...this.latestLocalDash } : null;
+    }
     if (me && me.alive && !me.leap && this.state.phase !== 'ended') {
       const cfg = BRAWLERS[me.brawlerId];
-      const len = Math.hypot(localInput.moveX, localInput.moveY);
-      const mx = len > 1 ? localInput.moveX / len : localInput.moveX;
-      const my = len > 1 ? localInput.moveY / len : localInput.moveY;
-      const resolved = resolveCircleGridCollision(
-        this.state.grid,
-        {
-          x: this.predX + mx * cfg.moveSpeed * dt,
-          y: this.predY + my * cfg.moveSpeed * dt,
-        },
-        cfg.radius,
-      );
-      this.predX = resolved.x;
-      this.predY = resolved.y;
-      me.x = this.predX;
-      me.y = this.predY;
-      if (len > 0.15) {
-        me.vx = mx * cfg.moveSpeed;
-        me.vy = my * cfg.moveSpeed;
+      if (this.latestLocalDash) {
+        const dash = this.latestLocalDash;
+        const resolved = resolveCircleGridCollision(
+          this.state.grid,
+          {
+            x: this.predX + dash.dirX * dash.speed * dt,
+            y: this.predY + dash.dirY * dash.speed * dt,
+          },
+          cfg.radius,
+        );
+        this.predX = resolved.x;
+        this.predY = resolved.y;
+        me.x = this.predX;
+        me.y = this.predY;
+        me.vx = dash.dirX * dash.speed;
+        me.vy = dash.dirY * dash.speed;
+        me.facing = Math.atan2(dash.dirY, dash.dirX);
+      } else {
+        const len = Math.hypot(localInput.moveX, localInput.moveY);
+        const mx = len > 1 ? localInput.moveX / len : localInput.moveX;
+        const my = len > 1 ? localInput.moveY / len : localInput.moveY;
+        const resolved = resolveCircleGridCollision(
+          this.state.grid,
+          {
+            x: this.predX + mx * cfg.moveSpeed * dt,
+            y: this.predY + my * cfg.moveSpeed * dt,
+          },
+          cfg.radius,
+        );
+        this.predX = resolved.x;
+        this.predY = resolved.y;
+        me.x = this.predX;
+        me.y = this.predY;
+        if (len > 0.15) {
+          me.vx = mx * cfg.moveSpeed;
+          me.vy = my * cfg.moveSpeed;
+        }
       }
     }
 

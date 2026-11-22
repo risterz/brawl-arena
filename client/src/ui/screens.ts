@@ -151,7 +151,7 @@ export class ScreenManager {
             </div>
             <p>${escapeHtml(b.description)}</p>
             <p style="color:#ffd43b;"><strong>Super:</strong> ${escapeHtml(b.superDescription)}</p>
-            <button id="open-brawlers-btn" class="btn btn-blue btn-sm" style="margin-top:6px;">Change Brawler (6)</button>
+            <button id="open-brawlers-btn" class="btn btn-blue btn-sm" style="margin-top:6px;">Change Brawler (${BRAWLER_LIST.length})</button>
           </div>
 
           <div class="action-deck">
