@@ -9,6 +9,7 @@ export type ModelKey =
   | 'golem'
   | 'mort'
   | 'lumi'
+  | 'kage'
   | 'crate'
   | 'pillar'
   | 'bush'
@@ -33,6 +34,7 @@ export const MODEL_MANIFEST: Record<ModelKey, string> = {
   golem: '/models/golem.glb',
   mort: '/models/mort.glb',
   lumi: '/models/lumi.glb',
+  kage: '/models/kage.glb',
   crate: '/models/crate.glb',
   pillar: '/models/pillar.glb',
   bush: '/models/bush.glb',

@@ -56,15 +56,22 @@ describe('Sculpted 3D projectile, bomb, crystal, flame, and heal meshes', () => 
     expect(crossGeo.attributes.position.count).toBeGreaterThan(20);
   });
 
-  it('has all 22 Blender GLB models present in client/public/models and isolates cloned materials when requested', () => {
+  it('has all 23 Blender GLB models and 7 brawler portraits present and isolates cloned materials when requested', () => {
     const keys = Object.keys(MODEL_MANIFEST) as ModelKey[];
-    expect(keys).toHaveLength(22);
+    expect(keys).toHaveLength(23);
     const modelsDir = path.resolve(__dirname, '../public/models');
     for (const k of keys) {
       const rel = MODEL_MANIFEST[k].replace(/^\/models\//, '');
       const fullPath = path.join(modelsDir, rel);
       expect(fs.existsSync(fullPath), `Missing GLB: ${fullPath}`).toBe(true);
       expect(fs.statSync(fullPath).size).toBeGreaterThan(1000);
+    }
+
+    const portraitsDir = path.resolve(__dirname, '../public/portraits');
+    for (const b of BRAWLER_LIST) {
+      const pPath = path.join(portraitsDir, `${b.id}.png`);
+      expect(fs.existsSync(pPath), `Missing portrait: ${pPath}`).toBe(true);
+      expect(fs.statSync(pPath).size).toBeGreaterThan(1000);
     }
 
     clearModelsForTest();
