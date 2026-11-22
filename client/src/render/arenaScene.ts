@@ -99,30 +99,98 @@ function createCheckeredGroundTexture(mapId: MapId): THREE.CanvasTexture {
   return tex;
 }
 
-function createMoltenLavaTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 128;
-  canvas.height = 128;
-  const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#ff5812';
-  ctx.fillRect(0, 0, 128, 128);
-  // Bright molten magma veins
-  ctx.fillStyle = '#ffba26';
-  ctx.beginPath();
-  ctx.ellipse(36, 44, 28, 16, 0.4, 0, Math.PI * 2);
-  ctx.ellipse(92, 86, 30, 14, -0.3, 0, Math.PI * 2);
-  ctx.fill();
-  // Cooling dark basalt crust patches
-  ctx.fillStyle = 'rgba(42, 18, 14, 0.58)';
-  ctx.beginPath();
-  ctx.roundRect(12, 76, 34, 24, 8);
-  ctx.roundRect(72, 18, 38, 22, 8);
-  ctx.fill();
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+function createAnimatedLavaMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime: { value: 0 },
+    },
+    vertexShader: `
+      uniform float uTime;
+      varying vec3 vWorldPos;
+      varying vec3 vNormalDir;
+      void main() {
+        vec4 worldPos = modelMatrix * vec4(position, 1.0);
+        // Seamless world-space molten swell across adjacent trench tiles
+        if (position.y > 0.0) {
+          float swell =
+            sin(worldPos.x * 2.1 + uTime * 1.9) * cos(worldPos.z * 1.8 - uTime * 1.4) * 0.024 +
+            sin((worldPos.x + worldPos.z) * 3.1 - uTime * 2.6) * 0.012;
+          worldPos.y += swell;
+        }
+        vWorldPos = worldPos.xyz;
+        vNormalDir = normalize(mat3(modelMatrix) * normal);
+        gl_Position = projectionMatrix * viewMatrix * worldPos;
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      varying vec3 vWorldPos;
+      varying vec3 vNormalDir;
+
+      float hash21(vec2 p) {
+        p = fract(p * vec2(123.34, 456.21));
+        p += dot(p, p + 45.32);
+        return fract(p.x * p.y);
+      }
+
+      float noise(vec2 p) {
+        vec2 i = floor(p);
+        vec2 f = fract(p);
+        vec2 u = f * f * (3.0 - 2.0 * f);
+        float a = hash21(i);
+        float b = hash21(i + vec2(1.0, 0.0));
+        float c = hash21(i + vec2(0.0, 1.0));
+        float d = hash21(i + vec2(1.0, 1.0));
+        return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+      }
+
+      float fbm(vec2 p) {
+        float v = 0.0;
+        float amp = 0.5;
+        for (int i = 0; i < 4; i++) {
+          v += amp * noise(p);
+          p = p * 2.03 + vec2(17.1, 31.7);
+          amp *= 0.5;
+        }
+        return v;
+      }
+
+      void main() {
+        // World-space flowing molten magma (zero tile seams!)
+        vec2 p = vWorldPos.xz * 0.72;
+        vec2 flow1 = vec2(uTime * 0.28, uTime * 0.16);
+        vec2 flow2 = vec2(-uTime * 0.19, uTime * 0.25);
+
+        float warpX = fbm(p + flow1);
+        float warpY = fbm(p * 1.15 + flow2 + vec2(4.2, 1.7));
+        vec2 warped = p + vec2(warpX, warpY) * 1.25 - flow1 * 0.65;
+
+        float n = fbm(warped * 1.35);
+        float veins = 1.0 - abs(fbm(warped * 2.1 + vec2(uTime * 0.18, -uTime * 0.14)) * 2.0 - 1.0);
+        veins = pow(clamp(veins, 0.0, 1.0), 2.4);
+
+        float pulse = 0.90 + 0.10 * sin(uTime * 3.1 + p.x * 2.2 - p.y * 1.7);
+        float heat = clamp((n * 0.78 + veins * 0.62) * pulse, 0.0, 1.0);
+
+        // Rich molten steelworks magma color ramp: dark cooling slag -> crimson -> bright orange -> white-gold core
+        vec3 slag   = vec3(0.18, 0.05, 0.04);
+        vec3 redHot = vec3(0.84, 0.16, 0.03);
+        vec3 orange = vec3(1.00, 0.44, 0.05);
+        vec3 gold   = vec3(1.00, 0.80, 0.18);
+        vec3 core   = vec3(1.00, 0.97, 0.68);
+
+        vec3 col = mix(slag, redHot, smoothstep(0.18, 0.40, heat));
+        col = mix(col, orange, smoothstep(0.38, 0.60, heat));
+        col = mix(col, gold,   smoothstep(0.58, 0.80, heat));
+        col = mix(col, core,   smoothstep(0.80, 0.96, heat));
+
+        // Slightly deeper crimson glow on recessed vertical trench sides
+        float sideShade = mix(0.82, 1.0, clamp(vNormalDir.y, 0.0, 1.0));
+        gl_FragColor = vec4(col * sideShade, 1.0);
+      }
+    `,
+    toneMapped: false,
+  });
 }
 
 function createLeafBladeGeo(): THREE.BufferGeometry {
@@ -154,6 +222,15 @@ export class ArenaRenderer {
   private breakableMeshes: Map<string, THREE.Object3D> = new Map();
   private bushMeshes: THREE.Object3D[] = [];
   private waterMeshes: THREE.Mesh[] = [];
+  private lavaMaterial: THREE.ShaderMaterial | null = null;
+  private lavaParticles: Array<{
+    mesh: THREE.Mesh;
+    baseX: number;
+    baseZ: number;
+    phase: number;
+    speed: number;
+    kind: 'bubble' | 'ember';
+  }> = [];
   private mineCrystal: THREE.Group | null = null;
   private ballRoot: THREE.Group | null = null;
   private ballSpinGroup: THREE.Group | null = null;
@@ -466,6 +543,8 @@ export class ArenaRenderer {
     this.breakableMeshes.clear();
     this.bushMeshes = [];
     this.waterMeshes = [];
+    this.lavaMaterial = null;
+    this.lavaParticles = [];
     this.mineCrystal = null;
     this.ballRoot = null;
     this.ballSpinGroup = null;
@@ -528,10 +607,20 @@ export class ArenaRenderer {
     const berryGeo = new THREE.OctahedronGeometry(0.085, 0);
 
     const isFoundry = mapId === 'iron-foundry';
-    const waterGeo = new THREE.BoxGeometry(1.0, 0.18, 1.0);
-    const waterMat = isFoundry
-      ? new THREE.MeshBasicMaterial({ map: createMoltenLavaTexture() })
-      : new THREE.MeshToonMaterial({ color: '#26b6ff', emissive: '#083a5c' });
+    const waterGeo = isFoundry
+      ? new THREE.BoxGeometry(1.0, 0.18, 1.0, 4, 1, 4)
+      : new THREE.BoxGeometry(1.0, 0.18, 1.0);
+    let waterMat: THREE.Material;
+    if (isFoundry) {
+      this.lavaMaterial = createAnimatedLavaMaterial();
+      waterMat = this.lavaMaterial;
+    } else {
+      waterMat = new THREE.MeshToonMaterial({ color: '#26b6ff', emissive: '#083a5c' });
+    }
+    const lavaBubbleGeo = isFoundry ? new THREE.SphereGeometry(0.11, 7, 6) : null;
+    const lavaBubbleMat = isFoundry ? new THREE.MeshBasicMaterial({ color: '#ffcf38' }) : null;
+    const lavaEmberGeo = isFoundry ? new THREE.OctahedronGeometry(0.048, 0) : null;
+    const lavaEmberMat = isFoundry ? new THREE.MeshBasicMaterial({ color: '#ff8a1f' }) : null;
 
     const crateKey = isFoundry && hasModel('foundry_crate') ? 'foundry_crate' : 'crate';
     const pillarKey = isFoundry && hasModel('foundry_pillar') ? 'foundry_pillar' : 'pillar';
@@ -670,6 +759,39 @@ export class ArenaRenderer {
           w.position.set(cx, -0.02, cz);
           this.mapGroup.add(w);
           this.waterMeshes.push(w);
+          if (isFoundry && lavaBubbleGeo && lavaBubbleMat && lavaEmberGeo && lavaEmberMat) {
+            const seed = (tx * 37 + ty * 91) % 100;
+            if (seed % 2 === 0) {
+              const bubble = new THREE.Mesh(lavaBubbleGeo, lavaBubbleMat);
+              const bx = cx + ((seed % 7) - 3) * 0.09;
+              const bz = cz + (((seed * 3) % 7) - 3) * 0.09;
+              bubble.position.set(bx, 0.05, bz);
+              this.mapGroup.add(bubble);
+              this.lavaParticles.push({
+                mesh: bubble,
+                baseX: bx,
+                baseZ: bz,
+                phase: seed * 0.17,
+                speed: 0.75 + (seed % 5) * 0.14,
+                kind: 'bubble',
+              });
+            }
+            if (seed % 3 === 0) {
+              const ember = new THREE.Mesh(lavaEmberGeo, lavaEmberMat);
+              const ex = cx + (((seed * 5) % 7) - 3) * 0.1;
+              const ez = cz + (((seed * 2) % 7) - 3) * 0.1;
+              ember.position.set(ex, 0.15, ez);
+              this.mapGroup.add(ember);
+              this.lavaParticles.push({
+                mesh: ember,
+                baseX: ex,
+                baseZ: ez,
+                phase: seed * 0.29,
+                speed: 0.55 + (seed % 4) * 0.12,
+                kind: 'ember',
+              });
+            }
+          }
         } else if (tile === TileType.GEM_MINE) {
           const glbMine = cloneModel('gem_mine');
           if (glbMine) {
@@ -878,8 +1000,36 @@ export class ArenaRenderer {
     for (let i = 0; i < this.bushMeshes.length; i++) {
       this.bushMeshes[i].rotation.z = Math.sin(this.clock * 2.0 + i * 0.7) * 0.022;
     }
-    for (let i = 0; i < this.waterMeshes.length; i++) {
-      this.waterMeshes[i].position.y = -0.03 + Math.sin(this.clock * 2.6 + i * 0.4) * 0.025;
+    if (this.lavaMaterial) {
+      this.lavaMaterial.uniforms.uTime.value = this.clock;
+      for (let i = 0; i < this.lavaParticles.length; i++) {
+        const p = this.lavaParticles[i];
+        const cycle = (this.clock * p.speed + p.phase) % 1;
+        if (p.kind === 'bubble') {
+          // Swell slowly on the magma surface, then pop sharply near cycle = 0.85
+          const swell = cycle < 0.82 ? Math.sin((cycle / 0.82) * Math.PI * 0.62) : Math.max(0, 1 - (cycle - 0.82) / 0.18);
+          p.mesh.scale.set(swell * 1.15, swell * 0.72, swell * 1.15);
+          p.mesh.position.set(
+            p.baseX + Math.sin(this.clock * 0.6 + p.phase) * 0.08,
+            0.055 + swell * 0.045,
+            p.baseZ + Math.cos(this.clock * 0.5 + p.phase) * 0.08,
+          );
+        } else {
+          // Glowing spark drifting upward from molten trench and fading out
+          const shrink = Math.sin(cycle * Math.PI);
+          p.mesh.scale.setScalar(Math.max(0.01, shrink * 1.1));
+          p.mesh.position.set(
+            p.baseX + Math.sin(this.clock * 2.2 + p.phase) * 0.18,
+            0.12 + cycle * 1.25,
+            p.baseZ + Math.cos(this.clock * 1.9 + p.phase) * 0.18,
+          );
+          p.mesh.rotation.y = this.clock * 4 + p.phase;
+        }
+      }
+    } else {
+      for (let i = 0; i < this.waterMeshes.length; i++) {
+        this.waterMeshes[i].position.y = -0.03 + Math.sin(this.clock * 2.6 + i * 0.4) * 0.025;
+      }
     }
     if (this.mineCrystal) {
       this.mineCrystal.rotation.y = this.clock * 1.8;
