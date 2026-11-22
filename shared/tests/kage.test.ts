@@ -316,4 +316,40 @@ describe('Kage (Shadow Assassin) config, Shadow Dash, and Phantom Slash', () => 
     expect(snap.brawlers[0].dash!.hitSlots).toEqual([]);
     expect(snap.brawlers[0].dash!.speed).toBe(15.0);
   });
+
+  it('clears active Shadow Dash immediately when a Brawl Ball goal triggers goalResetTimer freeze', () => {
+    const engine = new MatchEngine({
+      mapId: 'crystal-cavern',
+      mode: 'brawl-ball',
+      slots: createKageSlots('golem'),
+    });
+    const kage = engine.state.brawlers[0];
+    const ball = engine.state.ball!;
+    kage.x = 10.5;
+    kage.y = 16.5;
+    kage.dash = {
+      dirX: 1,
+      dirY: 0,
+      speed: 15.0,
+      elapsed: 0.05,
+      duration: 0.18,
+      hitRadius: 0.72,
+      damage: 1080,
+      superChargePerHit: 22,
+      hitSlots: [],
+    };
+    // Place ball crossing Red's North goal line touched by Blue
+    ball.holderSlot = null;
+    ball.lastTouchTeam = 'blue';
+    ball.lastTouchSlot = 0;
+    ball.x = 10.5;
+    ball.y = 1.15;
+    ball.vx = 0;
+    ball.vy = -12;
+
+    const events = engine.step(0.05);
+    expect(events.some((e) => e.type === 'goal' && e.team === 'blue')).toBe(true);
+    expect(engine.state.goalResetTimer).toBeGreaterThan(0);
+    expect(kage.dash).toBeNull();
+  });
 });

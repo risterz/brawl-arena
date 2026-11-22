@@ -116,6 +116,75 @@ describe('Input throttling and Local Solo controller', () => {
     expect(stWalk.brawlers[0].y).toBeLessThan(yBeforeWalk - 0.1);
   });
 
+  it('caps online local dash smoothing to remaining dash duration, substeps low-FPS wall corners, and freezes during Brawl Ball goalResetTimer', () => {
+    const engine = new MatchEngine({
+      mapId: 'crystal-cavern',
+      mode: 'brawl-ball',
+      slots: [
+        { slotIndex: 0, team: 'blue', name: 'KageMe', isBot: false, brawlerId: 'kage' },
+        { slotIndex: 1, team: 'red', name: 'BotRed', isBot: true, brawlerId: 'golem' },
+      ],
+    });
+    const kage = engine.state.brawlers[0];
+    kage.x = 10.5;
+    kage.y = 20.0;
+    kage.dash = {
+      dirX: 1,
+      dirY: 0,
+      speed: 15.0,
+      elapsed: 0.15,
+      duration: 0.18,
+      hitRadius: 0.72,
+      damage: 1080,
+      superChargePerHit: 22,
+      hitSlots: [],
+    };
+
+    const online = new OnlineMatchController({
+      onLobby: () => {},
+      onMatchStart: () => {},
+      onEvents: () => {},
+      onError: () => {},
+      onDisconnect: () => {},
+    });
+    const idleInput = {
+      moveX: 0,
+      moveY: 0,
+      aimAngle: 0,
+      fire: false,
+      superFire: false,
+      autoAim: false,
+    };
+
+    // 1. Only 0.03s (0.45 tiles) remaining in dash: two 50ms ticks without a new snapshot must cap at ~0.45 tiles and expire dash locally
+    const snapNearEnd = serializeSnapshot(engine.state, [], 5, []);
+    online.ingestSnapshotForTest(snapNearEnd, 2000, 0);
+    online.tick(0.05, idleInput, 2050);
+    const stAfter = online.tick(0.05, idleInput, 2100)!;
+    expect(stAfter.brawlers[0].x).toBeCloseTo(10.95, 2);
+    expect(stAfter.brawlers[0].dash).toBeNull();
+
+    // 2. During Brawl Ball goalResetTimer > 0, local prediction must stay frozen even if a snapshot arrives
+    engine.state.goalResetTimer = 2.0;
+    kage.x = 10.5;
+    kage.y = 20.0;
+    kage.dash = {
+      dirX: 1,
+      dirY: 0,
+      speed: 15.0,
+      elapsed: 0.0,
+      duration: 0.18,
+      hitRadius: 0.72,
+      damage: 1080,
+      superChargePerHit: 22,
+      hitSlots: [],
+    };
+    const snapFreeze = serializeSnapshot(engine.state, [], 6, []);
+    online.ingestSnapshotForTest(snapFreeze, 2200, 0);
+    const stFrozen = online.tick(0.05, { ...idleInput, moveX: 1 }, 2250)!;
+    expect(stFrozen.brawlers[0].x).toBeCloseTo(10.5, 2);
+  });
+
   it('Review Focus #5: registers SFX_URLS and valid mp3 audio files for every brawler including kage', () => {
     const audioDir = path.resolve(__dirname, '../public/audio');
     for (const b of BRAWLER_LIST) {

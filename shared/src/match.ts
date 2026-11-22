@@ -1053,6 +1053,12 @@ export class MatchEngine {
         this.finishMatch(scoredTeam, events);
       } else {
         this.state.goalResetTimer = BRAWL_BALL_RESET_DURATION;
+        for (const b of this.state.brawlers) {
+          b.dash = null;
+          b.leap = null;
+          b.tackleTimer = 0;
+          b.burst = null;
+        }
         ball.holderSlot = null;
         ball.vx = 0;
         ball.vy = 0;

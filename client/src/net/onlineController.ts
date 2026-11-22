@@ -303,8 +303,11 @@ export class OnlineMatchController {
     // Reconcile local prediction gently against authoritative server
     const srvMe = snap.brawlers[this.mySlot];
     if (srvMe) {
-      this.latestLocalDash = srvMe.alive && !srvMe.leap && srvMe.dash ? { ...srvMe.dash } : null;
-      if (!this.predInit || !srvMe.alive || srvMe.leap) {
+      this.latestLocalDash =
+        srvMe.alive && !srvMe.leap && (snap.goalResetTimer ?? 0) <= 0 && srvMe.dash
+          ? { ...srvMe.dash }
+          : null;
+      if (!this.predInit || !srvMe.alive || srvMe.leap || (snap.goalResetTimer ?? 0) > 0) {
         this.predX = srvMe.x;
         this.predY = srvMe.y;
         this.predInit = true;
@@ -396,25 +399,36 @@ export class OnlineMatchController {
     if (me) {
       me.dash = this.latestLocalDash ? { ...this.latestLocalDash } : null;
     }
-    if (me && me.alive && !me.leap && this.state.phase !== 'ended') {
+    if (me && me.alive && !me.leap && this.state.phase !== 'ended' && this.state.goalResetTimer <= 0) {
       const cfg = BRAWLERS[me.brawlerId];
       if (this.latestLocalDash) {
         const dash = this.latestLocalDash;
-        const resolved = resolveCircleGridCollision(
-          this.state.grid,
-          {
-            x: this.predX + dash.dirX * dash.speed * dt,
-            y: this.predY + dash.dirY * dash.speed * dt,
-          },
-          cfg.radius,
-        );
-        this.predX = resolved.x;
-        this.predY = resolved.y;
+        const dashDt = Math.min(dt, Math.max(0, dash.duration - dash.elapsed));
+        dash.elapsed += dt;
+        const stepDist = dash.speed * dashDt;
+        const substeps = Math.max(1, Math.ceil(stepDist / 0.14));
+        const subDt = dashDt / substeps;
+        for (let s = 0; s < substeps; s++) {
+          const resolved = resolveCircleGridCollision(
+            this.state.grid,
+            {
+              x: this.predX + dash.dirX * dash.speed * subDt,
+              y: this.predY + dash.dirY * dash.speed * subDt,
+            },
+            cfg.radius,
+          );
+          this.predX = resolved.x;
+          this.predY = resolved.y;
+        }
         me.x = this.predX;
         me.y = this.predY;
         me.vx = dash.dirX * dash.speed;
         me.vy = dash.dirY * dash.speed;
         me.facing = Math.atan2(dash.dirY, dash.dirX);
+        if (dash.elapsed >= dash.duration) {
+          this.latestLocalDash = null;
+          me.dash = null;
+        }
       } else {
         const len = Math.hypot(localInput.moveX, localInput.moveY);
         const mx = len > 1 ? localInput.moveX / len : localInput.moveX;
