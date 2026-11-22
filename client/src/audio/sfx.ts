@@ -1,6 +1,19 @@
-import { MatchEvent } from '@brawl-arena/shared';
+import { MatchEvent, MatchState } from '@brawl-arena/shared';
+import { computePodiumLineup } from '../render/victoryStage';
 
-export type BgmTrack = 'lobby' | 'battle' | 'battle_alt' | 'foundry' | 'countdown' | 'victory';
+export type BgmTrack =
+  | 'lobby'
+  | 'battle'
+  | 'battle_alt'
+  | 'foundry'
+  | 'countdown'
+  | 'victory'
+  | 'defeat';
+
+export function getMatchResultBgmTrack(state: MatchState, localSlot: number): 'victory' | 'defeat' {
+  const lineup = computePodiumLineup(state, localSlot);
+  return lineup.outcome === 'victory' ? 'victory' : 'defeat';
+}
 
 export type SfxKey =
   | 'buck'
@@ -21,13 +34,14 @@ export type SfxKey =
   | 'ui_click'
   | 'ui_select';
 
-const BGM_URLS: Record<BgmTrack, string> = {
+export const BGM_URLS: Record<BgmTrack, string> = {
   lobby: '/audio/bgm_lobby.mp3',
   battle: '/audio/bgm_battle.mp3',
   battle_alt: '/audio/bgm_battle_alt.mp3',
   foundry: '/audio/bgm_foundry.mp3',
   countdown: '/audio/bgm_countdown.mp3',
   victory: '/audio/bgm_victory.mp3',
+  defeat: '/audio/bgm_defeat.mp3',
 };
 
 const SFX_URLS: Record<SfxKey, string> = {
@@ -202,7 +216,7 @@ export class SfxEngine {
     let audio = this.bgmElements.get(track);
     if (!audio) {
       audio = new Audio(BGM_URLS[track]);
-      audio.loop = track !== 'victory';
+      audio.loop = true;
       audio.preload = 'auto';
       audio.volume = BGM_VOLUME;
       this.bgmElements.set(track, audio);

@@ -1,6 +1,6 @@
 import './styles.css';
 import { BrawlerId, GameMode, MapId, MatchState } from '@brawl-arena/shared';
-import { SfxEngine } from './audio/sfx';
+import { getMatchResultBgmTrack, SfxEngine } from './audio/sfx';
 import { ControlManager } from './input/controls';
 import { LocalMatchController } from './net/localController';
 import { OnlineMatchController } from './net/onlineController';
@@ -159,9 +159,9 @@ function boot(): void {
     },
   });
 
-  function syncMatchBgm(state: MatchState): void {
+  function syncMatchBgm(state: MatchState, localSlot: number): void {
     if (state.phase === 'ended') {
-      sfx.playBgm('victory');
+      sfx.playBgm(getMatchResultBgmTrack(state, localSlot));
     } else if (state.countdownTeam !== null || state.phase === 'sudden_death') {
       sfx.playBgm('countdown');
     } else {
@@ -315,7 +315,7 @@ function boot(): void {
     hud.hide();
     if (firstShow) {
       renderer.setResultsScene(state, localSlot);
-      sfx.playBgm('victory');
+      sfx.playBgm(getMatchResultBgmTrack(state, localSlot));
     }
     const isHost = Boolean(lobby && lobby.hostSlot === online.getMySlot());
     screens.renderResults({
@@ -383,7 +383,7 @@ function boot(): void {
       renderer.syncState(state, localMatch.localSlot, dt, telegraph);
       hud.setTouchMode(controls.isTouchMode());
       hud.update(state, localMatch.localSlot, dt, (wx, wy, h) => renderer.projectToScreen(wx, wy, h));
-      syncMatchBgm(state);
+      syncMatchBgm(state, localMatch.localSlot);
       maybeShowResults(state, localMatch.localSlot, false);
     } else if (mode === 'online') {
       const currentState = online.getState();
@@ -399,7 +399,7 @@ function boot(): void {
           renderer.syncState(state, mySlot, dt, telegraph);
           hud.setTouchMode(controls.isTouchMode());
           hud.update(state, mySlot, dt, (wx, wy, h) => renderer.projectToScreen(wx, wy, h));
-          syncMatchBgm(state);
+          syncMatchBgm(state, mySlot);
           maybeShowResults(state, mySlot, true);
         }
       }
