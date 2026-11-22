@@ -152,6 +152,7 @@ export function serializeSnapshot(
       tackleCooldown: Number(b.tackleCooldown.toFixed(2)),
       tackleTimer: Number(b.tackleTimer.toFixed(2)),
       leap: b.leap ? { ...b.leap } : null,
+      dash: b.dash ? { ...b.dash, hitSlots: [] } : null,
       burst: null,
       stats: { ...b.stats },
     })),

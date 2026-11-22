@@ -134,6 +134,7 @@ export class MatchEngine {
         tackleDirX: 0,
         tackleDirY: 0,
         leap: null,
+        dash: null,
         burst: null,
         stats: {
           kills: 0,
@@ -209,8 +210,8 @@ export class MatchEngine {
     this.inputs.set(slotIndex, { ...input });
   }
 
-  public applyDamage(attacker: BrawlerState | null, target: BrawlerState, amount: number): void {
-    if (!target.alive || target.invulnTimer > 0 || amount <= 0) return;
+  public applyDamage(attacker: BrawlerState | null, target: BrawlerState, amount: number): number {
+    if (!target.alive || target.invulnTimer > 0 || amount <= 0) return 0;
 
     const actual = Math.min(target.hp, Math.round(amount));
     target.hp -= actual;
@@ -237,6 +238,7 @@ export class MatchEngine {
       target.respawnTimer = RESPAWN_DURATION;
       target.burst = null;
       target.leap = null;
+      target.dash = null;
       target.stats.deaths += 1;
       if (attacker) {
         attacker.stats.kills += 1;
@@ -286,6 +288,7 @@ export class MatchEngine {
         this.finishMatch(attacker.team);
       }
     }
+    return actual;
   }
 
   public applyHeal(healer: BrawlerState, target: BrawlerState, amount: number): void {
@@ -369,6 +372,7 @@ export class MatchEngine {
           b.tackleDirX = 0;
           b.tackleDirY = 0;
           b.leap = null;
+          b.dash = null;
           b.burst = null;
         }
         continue;
@@ -435,10 +439,53 @@ export class MatchEngine {
                   );
                   target.x = pushed.x;
                   target.y = pushed.y;
+                  target.dash = null;
                 }
               }
             }
           }
+        }
+        continue;
+      }
+
+      // Active Shadow Dash overrides movement/inputs (substepped collision + piercing slash)
+      if (b.dash) {
+        const dash = b.dash;
+        const dashDt = Math.min(dt, Math.max(0, dash.duration - dash.elapsed));
+        dash.elapsed += dt;
+        const stepDist = dash.speed * dashDt;
+        const substeps = Math.max(1, Math.ceil(stepDist / 0.14));
+        const subDt = dashDt / substeps;
+        b.vx = dash.dirX * dash.speed;
+        b.vy = dash.dirY * dash.speed;
+        b.facing = Math.atan2(dash.dirY, dash.dirX);
+
+        for (let s = 0; s < substeps; s++) {
+          const nextDashPos = resolveCircleGridCollision(
+            this.state.grid,
+            { x: b.x + b.vx * subDt, y: b.y + b.vy * subDt },
+            cfg.radius,
+            false,
+          );
+          b.x = nextDashPos.x;
+          b.y = nextDashPos.y;
+
+          for (const target of this.state.brawlers) {
+            if (!target.alive || target.team === b.team || target.leap) continue;
+            if (dash.hitSlots.includes(target.slotIndex)) continue;
+            const rSum = dash.hitRadius + BRAWLERS[target.brawlerId].radius;
+            const dx = target.x - b.x;
+            const dy = target.y - b.y;
+            if (dx * dx + dy * dy <= rSum * rSum) {
+              dash.hitSlots.push(target.slotIndex);
+              this.applyDamage(b, target, dash.damage);
+              this.onSuperCharge(b, dash.superChargePerHit);
+            }
+          }
+        }
+
+        if (dash.elapsed >= dash.duration) {
+          b.dash = null;
         }
         continue;
       }
@@ -619,11 +666,11 @@ export class MatchEngine {
     const holderSlot = this.state.ball?.holderSlot ?? null;
     for (let i = 0; i < this.state.brawlers.length; i++) {
       const a = this.state.brawlers[i];
-      if (!a.alive || a.leap) continue;
+      if (!a.alive || a.leap || a.dash) continue;
       const rA = BRAWLERS[a.brawlerId].radius;
       for (let j = i + 1; j < this.state.brawlers.length; j++) {
         const b = this.state.brawlers[j];
-        if (!b.alive || b.leap) continue;
+        if (!b.alive || b.leap || b.dash) continue;
         const rB = BRAWLERS[b.brawlerId].radius;
         const minDist = rA + rB + 0.08;
         const dx = b.x - a.x;
@@ -826,6 +873,7 @@ export class MatchEngine {
       b.tackleDirX = 0;
       b.tackleDirY = 0;
       b.leap = null;
+      b.dash = null;
       b.burst = null;
     }
     this.state.projectiles = [];
@@ -935,6 +983,7 @@ export class MatchEngine {
             ball.isSuperKick = false;
             ball.pickupCooldown = 0;
             ball.kickCooldownSlot = null;
+            b.dash = null;
             break;
           }
         }

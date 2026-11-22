@@ -66,7 +66,7 @@ export function findAutoAimAngle(
 }
 
 export interface CombatCallbacks {
-  applyDamage: (attacker: BrawlerState | null, target: BrawlerState, amount: number) => void;
+  applyDamage: (attacker: BrawlerState | null, target: BrawlerState, amount: number) => number;
   applyHeal: (healer: BrawlerState, target: BrawlerState, amount: number) => void;
   onSuperCharge: (shooter: BrawlerState, amount: number) => void;
 }
@@ -88,7 +88,9 @@ export function fireSingleVolley(
     callbacks.applyHeal(shooter, shooter, spec.healAmount);
   }
 
-  const shared = sharedHitSlots ?? (shooter.brawlerId === 'lumi' ? [] : undefined);
+  const shared =
+    sharedHitSlots ??
+    (shooter.brawlerId === 'lumi' || shooter.brawlerId === 'kage' ? [] : undefined);
 
   for (let i = 0; i < count; i++) {
     const t = count === 1 ? 0 : i / (count - 1) - 0.5;
@@ -132,6 +134,8 @@ export function fireSingleVolley(
         puddleDps: spec.puddleDps ?? 500,
         knockback: spec.knockback ?? 0,
         breaksWalls: Boolean(spec.breaksWalls),
+        passesWalls: Boolean(spec.passesWalls),
+        lifestealRatio: spec.lifestealRatio ?? 0,
         isHeal: false,
         healAmount: 0,
         superChargePerHit: spec.superChargePerHit,
@@ -169,6 +173,8 @@ export function fireSingleVolley(
       puddleDps: 0,
       knockback: spec.knockback ?? 0,
       breaksWalls: Boolean(spec.breaksWalls),
+      passesWalls: Boolean(spec.passesWalls),
+      lifestealRatio: spec.lifestealRatio ?? 0,
       isHeal: Boolean(spec.isHeal),
       healAmount: spec.healAmount ?? 0,
       superChargePerHit: spec.superChargePerHit,
@@ -203,6 +209,21 @@ export function triggerAttack(
     y: shooter.y,
     angle,
   });
+
+  if (spec.isDash) {
+    shooter.dash = {
+      dirX: Math.cos(angle),
+      dirY: Math.sin(angle),
+      speed: spec.speed,
+      elapsed: 0,
+      duration: spec.dashDuration ?? 0.18,
+      hitRadius: spec.radius,
+      damage: spec.damage,
+      superChargePerHit: spec.superChargePerHit,
+      hitSlots: [],
+    };
+    return;
+  }
 
   if (spec.isLeap) {
     // Drop bombs at takeoff if Vex
@@ -334,8 +355,8 @@ export function stepProjectiles(
         break;
       }
 
-      // Heal waves pass through walls; normal attacks collide cleanly with walls & diagonal corners
-      if (!p.isHeal) {
+      // Heal waves and wall-piercing supers pass through walls; normal attacks collide cleanly with walls & diagonal corners
+      if (!p.isHeal && !p.passesWalls) {
         const hitTile = findBlockingWallForCircle(state.grid, p.x, p.y, wallHitRadius);
         if (hitTile !== null) {
           if (p.breaksWalls) {
@@ -378,8 +399,11 @@ export function stepProjectiles(
             p.hitSlots.push(target.slotIndex);
             const ratio = Math.min(1, p.traveled / Math.max(0.1, p.maxRange));
             const dmg = Math.round(p.minDamage + (p.damage - p.minDamage) * ratio);
-            callbacks.applyDamage(owner, target, dmg);
+            const actualDmg = callbacks.applyDamage(owner, target, dmg);
             if (owner) callbacks.onSuperCharge(owner, p.superChargePerHit);
+            if (p.lifestealRatio > 0 && actualDmg > 0 && owner && owner.alive) {
+              callbacks.applyHeal(owner, owner, Math.round(actualDmg * p.lifestealRatio));
+            }
 
             if (p.knockback > 0 && target.alive && target.invulnTimer <= 0) {
               const len = Math.max(0.001, Math.hypot(p.vx, p.vy));
@@ -393,6 +417,7 @@ export function stepProjectiles(
               );
               target.x = pushed.x;
               target.y = pushed.y;
+              target.dash = null;
             }
 
             if (!p.piercing) {

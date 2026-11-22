@@ -10,9 +10,9 @@ import {
 } from '../src/collision';
 
 describe('brawlers and symmetric maps', () => {
-  it('defines all 6 required original brawlers with 3 ammo slots', () => {
+  it('defines all 7 brawlers with 3 ammo slots', () => {
     expect(BRAWLER_LIST.map((b) => b.id).sort()).toEqual([
-      'blaze', 'buck', 'golem', 'lumi', 'mort', 'vex',
+      'blaze', 'buck', 'golem', 'kage', 'lumi', 'mort', 'vex',
     ]);
     for (const b of BRAWLER_LIST) {
       expect(b.maxAmmo).toBe(3);

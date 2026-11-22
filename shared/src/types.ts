@@ -1,6 +1,6 @@
 export type Team = 'blue' | 'red';
 
-export type BrawlerId = 'buck' | 'vex' | 'blaze' | 'golem' | 'mort' | 'lumi';
+export type BrawlerId = 'buck' | 'vex' | 'blaze' | 'golem' | 'mort' | 'lumi' | 'kage';
 
 export type MapId = 'crystal-cavern' | 'twin-bridges' | 'iron-foundry';
 
@@ -42,6 +42,10 @@ export interface AttackSpec {
   breaksWalls?: boolean;
   isLeap?: boolean;
   leapBackwards?: boolean;
+  isDash?: boolean;
+  dashDuration?: number;
+  passesWalls?: boolean;
+  lifestealRatio?: number;
   dropBombs?: number;
   isHeal?: boolean;
   healAmount?: number;
@@ -96,6 +100,18 @@ export interface LeapState {
   superChargePerHit: number;
 }
 
+export interface DashState {
+  dirX: number;
+  dirY: number;
+  speed: number;
+  elapsed: number;
+  duration: number;
+  hitRadius: number;
+  damage: number;
+  superChargePerHit: number;
+  hitSlots: number[];
+}
+
 export interface BurstQueue {
   remaining: number;
   timer: number;
@@ -141,6 +157,7 @@ export interface BrawlerState {
   tackleDirX: number;
   tackleDirY: number;
   leap: LeapState | null;
+  dash: DashState | null;
   burst: BurstQueue | null;
   stats: BrawlerStats;
 }
@@ -173,6 +190,8 @@ export interface ProjectileState {
   puddleDps: number;
   knockback: number;
   breaksWalls: boolean;
+  passesWalls: boolean;
+  lifestealRatio: number;
   isHeal: boolean;
   healAmount: number;
   superChargePerHit: number;

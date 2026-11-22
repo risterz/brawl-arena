@@ -119,6 +119,8 @@ describe('Bot pathfinding and Gem Grab AI', () => {
       puddleDps: 0,
       knockback: 0,
       breaksWalls: false,
+      passesWalls: false,
+      lifestealRatio: 0,
       isHeal: false,
       healAmount: 0,
       superChargePerHit: 25,
