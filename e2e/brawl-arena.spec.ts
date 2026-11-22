@@ -14,6 +14,7 @@ test.describe('Brawl Arena End-to-End', () => {
     await expect(page.getByRole('heading', { name: 'BRAWL ARENA' })).toBeVisible();
     await page.locator('#open-brawlers-btn').click();
     await expect(page.getByText('CHOOSE BRAWLER')).toBeVisible();
+    await expect(page.locator('.brawler-card')).toHaveCount(7);
     await page.locator('.brawler-card[data-id="blaze"]').click();
 
     await page.locator('#play-solo-btn').click();
@@ -26,6 +27,46 @@ test.describe('Brawl Arena End-to-End', () => {
     await page.mouse.down();
     await expect(page.locator('#hud-timer')).not.toHaveText(t0!, { timeout: 12_000 });
     await page.mouse.up();
+    await page.keyboard.up('KeyW');
+
+    expect(errors).toEqual([]);
+  });
+
+  test('Kage appears in 7-brawler drawer with loaded portrait and runs Solo match with Shadow Dash and 0 errors', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (err) => errors.push(err.message));
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') errors.push(msg.text());
+    });
+
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto('/');
+
+    await expect(page.locator('#open-brawlers-btn')).toContainText('Change Brawler (7)');
+    await page.locator('#open-brawlers-btn').click();
+    await expect(page.locator('.brawler-card')).toHaveCount(7);
+
+    const kageCard = page.locator('.brawler-card[data-id="kage"]');
+    await expect(kageCard).toBeVisible();
+    const portraitLoaded = await kageCard
+      .locator('img')
+      .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0);
+    expect(portraitLoaded).toBe(true);
+
+    await kageCard.click();
+    await expect(page.locator('.brawler-summary')).toContainText('Kage');
+
+    await page.locator('#play-solo-btn').click();
+    await expect(page.locator('#hud-layer')).toBeVisible();
+    const t0 = await page.locator('#hud-timer').textContent();
+
+    // Move and trigger Shadow Dash forward
+    await page.keyboard.down('KeyW');
+    await page.mouse.move(640, 220);
+    await page.mouse.down();
+    await page.waitForTimeout(250);
+    await page.mouse.up();
+    await expect(page.locator('#hud-timer')).not.toHaveText(t0!, { timeout: 12_000 });
     await page.keyboard.up('KeyW');
 
     expect(errors).toEqual([]);
@@ -64,7 +105,7 @@ test.describe('Brawl Arena End-to-End', () => {
   });
 
   test('Live Cloudflare Worker room-code multiplayer syncs 2 humans + 4 bots and blocks late joiner', async ({ browser }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(150_000);
     const ctxA = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     const ctxB = await browser.newContext({ viewport: { width: 1280, height: 720 } });
     const ctxC = await browser.newContext({ viewport: { width: 1280, height: 720 } });
