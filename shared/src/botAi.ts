@@ -60,6 +60,24 @@ function isWalkablePoint(grid: Uint8Array, x: number, y: number): boolean {
 }
 
 /**
+ * Checks whether a melee dash along `angle` for `checkDist` tiles stays on clear walkable
+ * ground (no walls, gem mine, or water/lava blocking the lunge).
+ */
+function isDashPathClear(grid: Uint8Array, from: Vec2, angle: number, checkDist = 1.8): boolean {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const steps = Math.max(2, Math.ceil(checkDist / 0.45));
+  for (let i = 1; i <= steps; i++) {
+    const d = (i / steps) * checkDist;
+    const px = from.x + cos * d;
+    const py = from.y + sin * d;
+    if (!isWalkablePoint(grid, px, py)) return false;
+    if (findBlockingWallForCircle(grid, px, py, 0.32) !== null) return false;
+  }
+  return true;
+}
+
+/**
  * Finds the nearest walkable flank/peek position that gives unobstructed line-of-sight
  * onto targetEnemy when the Gem Mine or cover crates block the direct line.
  */
@@ -289,7 +307,7 @@ export class BotController {
     for (const bot of state.brawlers) {
       if (!bot.isBot) continue;
 
-      if (!bot.alive || bot.leap || state.goalResetTimer > 0) {
+      if (!bot.alive || bot.leap || bot.dash || state.goalResetTimer > 0) {
         result.set(bot.slotIndex, {
           moveX: 0,
           moveY: 0,
@@ -450,7 +468,14 @@ export class BotController {
             goal = peekSpot ?? { x: targetEnemy.x, y: targetEnemy.y };
           } else {
             // Press forward tighter (~25% closer than normal) to force enemy back and reclaim map control
-            const rushFactor = bot.brawlerId === 'golem' ? 0.32 : bot.brawlerId === 'buck' ? 0.44 : 0.62;
+            const rushFactor =
+              bot.brawlerId === 'kage'
+                ? 0.28
+                : bot.brawlerId === 'golem'
+                  ? 0.32
+                  : bot.brawlerId === 'buck'
+                    ? 0.44
+                    : 0.62;
             const rushDist = cfg.attack.range * rushFactor;
             const dx = bot.x - targetEnemy.x;
             const dy = bot.y - targetEnemy.y;
@@ -502,15 +527,17 @@ export class BotController {
           } else {
             // Role-tuned ideal engagement spacing; high-gem carriers in carefulRushMode stay near safe max range!
             let idealFactor =
-              bot.brawlerId === 'golem'
-                ? 0.42
-                : bot.brawlerId === 'buck'
-                  ? 0.58
-                  : bot.brawlerId === 'vex'
-                    ? 0.84
-                    : bot.brawlerId === 'mort'
-                      ? 0.80
-                      : 0.72;
+              bot.brawlerId === 'kage'
+                ? 0.34
+                : bot.brawlerId === 'golem'
+                  ? 0.42
+                  : bot.brawlerId === 'buck'
+                    ? 0.58
+                    : bot.brawlerId === 'vex'
+                      ? 0.84
+                      : bot.brawlerId === 'mort'
+                        ? 0.80
+                        : 0.72;
             if (carefulRushMode) {
               idealFactor = Math.max(idealFactor, 0.88);
             }
@@ -695,6 +722,16 @@ export class BotController {
             if (!riskyCarrierDive && dist <= cfg.superAttack.range * 0.94 && (dist >= 2.2 || targetEnemy.gems >= 3 || targetEnemy.hp < 2200)) {
               superFire = true;
             }
+          } else if (bot.brawlerId === 'kage') {
+            // Kage Phantom Slash: pierces walls and enemies while healing for 80% of damage dealt!
+            const wantsHealOrKill =
+              hpRatio < 0.78 ||
+              targetEnemy.gems >= 2 ||
+              targetEnemy.hp <= cfg.superAttack.damage * 1.1 ||
+              enemyLeadingHeavily;
+            if (dist <= cfg.superAttack.range * 0.94 && wantsHealOrKill) {
+              superFire = true;
+            }
           } else if (bot.brawlerId === 'mort') {
             // Mort Acid Rain: blanket target enemy / carrier / cluster within lob range
             if (dist <= cfg.superAttack.range * 0.94) {
@@ -725,7 +762,8 @@ export class BotController {
           dist <= sweetSpotRange || isFinisher || targetEnemy.gems >= 3 || enemyLeadingHeavily;
         const hasEnoughAmmo = bot.ammo >= (worthSpendingLastAmmo ? 1.0 : 1.75);
 
-        if (!superFire && !holdForRegen && hasEnoughAmmo && dist <= cfg.attack.range * 0.97 && canShoot) {
+        const dashSafe = !cfg.attack.isDash || isDashPathClear(state.grid, bot, aimAngle, Math.min(1.8, dist));
+        if (!superFire && !holdForRegen && hasEnoughAmmo && dist <= cfg.attack.range * 0.97 && canShoot && dashSafe) {
           fire = true;
         }
       }
@@ -944,12 +982,13 @@ export class BotController {
           bot.superCharge >= 100 &&
           bot.brawlerId !== 'vex' &&
           dist <= cfg.superAttack.range * 0.9 &&
-          (canShoot || cfg.superAttack.breaksWalls)
+          (canShoot || cfg.superAttack.breaksWalls || cfg.superAttack.passesWalls)
         ) {
           superFire = true;
         }
 
-        if (!superFire && bot.ammo >= 1.0 && dist <= cfg.attack.range * 0.96 && canShoot) {
+        const dashSafe = !cfg.attack.isDash || isDashPathClear(state.grid, bot, aimAngle, Math.min(1.8, dist));
+        if (!superFire && bot.ammo >= 1.0 && dist <= cfg.attack.range * 0.96 && canShoot && dashSafe) {
           fire = true;
         }
       }

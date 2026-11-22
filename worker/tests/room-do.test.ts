@@ -263,4 +263,25 @@ describe('Room codes and RoomDurableObject lifecycle', () => {
     expect(st2v2.brawlers.filter((b) => b.team === 'blue')).toHaveLength(2);
     expect(st2v2.brawlers.filter((b) => b.team === 'red')).toHaveLength(2);
   });
+
+  it('supports picking kage in lobby, latching fire into Shadow Dash, and broadcasting dash in MatchSnapshot', () => {
+    const room = new RoomManager('KAGE');
+    const host = new MockSocket();
+    room.handleConnect(host, 'tok-kage', 'Shinobi');
+    room.handleMessage(host, JSON.stringify({ type: 'pick_brawler', brawlerId: 'kage' }));
+    expect(room.getLobby().slots[0].brawlerId).toBe('kage');
+
+    room.handleMessage(host, JSON.stringify({ type: 'start_match' }));
+    expect(room.getMatchState()!.brawlers[0].brawlerId).toBe('kage');
+
+    // Send fire input -> tick -> snapshot must carry active dash state
+    room.handleMessage(host, JSON.stringify({ type: 'input', input: { md: -1, aa: 54, fl: 1 } }));
+    room.stepSimulation(0.05);
+
+    const lastSnapRaw = [...host.sentMessages].reverse().find((m) => m.includes('"type":"snapshot"'));
+    expect(lastSnapRaw).toBeDefined();
+    const parsed = JSON.parse(lastSnapRaw!) as { snapshot: { brawlers: Array<{ dash: { speed: number } | null }> } };
+    expect(parsed.snapshot.brawlers[0].dash).not.toBeNull();
+    expect(parsed.snapshot.brawlers[0].dash!.speed).toBe(15.0);
+  });
 });

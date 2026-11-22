@@ -54,7 +54,7 @@ interface InternalSlot {
   disconnectTimer: number;
 }
 
-const DEFAULT_BOT_BRAWLERS: BrawlerId[] = ['buck', 'vex', 'lumi', 'blaze', 'golem', 'mort'];
+const DEFAULT_BOT_BRAWLERS: BrawlerId[] = ['buck', 'vex', 'lumi', 'kage', 'golem', 'mort', 'blaze'];
 
 function sanitizeName(raw: string, fallback: string): string {
   const cleaned = raw.replace(/[^a-zA-Z0-9 _-]/g, '').trim().slice(0, 16);

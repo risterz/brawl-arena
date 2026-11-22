@@ -316,4 +316,58 @@ describe('Bot pathfinding and Gem Grab AI', () => {
     const retreatInput = ai.computeInputs(engine.state, 0.05).get(3)!;
     expect(retreatInput.moveY).toBeLessThan(-0.3);
   });
+
+  it('Kage bot refuses to dash into water/wall, casts wall-piercing Phantom Slash through solid cover, and runs cleanly in both modes', () => {
+    const slots: SlotSetup[] = [
+      { slotIndex: 0, team: 'blue', name: 'BotKage', isBot: true, brawlerId: 'kage' },
+      { slotIndex: 1, team: 'blue', name: 'BotLumi', isBot: true, brawlerId: 'lumi' },
+      { slotIndex: 2, team: 'blue', name: 'BotVex', isBot: true, brawlerId: 'vex' },
+      { slotIndex: 3, team: 'red', name: 'BotGolem', isBot: true, brawlerId: 'golem' },
+      { slotIndex: 4, team: 'red', name: 'BotBuck', isBot: true, brawlerId: 'buck' },
+      { slotIndex: 5, team: 'red', name: 'BotBlaze', isBot: true, brawlerId: 'blaze' },
+    ];
+    const engine = new MatchEngine({ mapId: 'crystal-cavern', slots, seed: 77 });
+    for (let x = 5; x <= 14; x++) {
+      engine.state.grid[10 * MAP_WIDTH + x] = TileType.EMPTY;
+    }
+    const kage = engine.state.brawlers[0];
+    const enemy = engine.state.brawlers[3];
+    engine.state.brawlers[4].alive = false;
+    engine.state.brawlers[5].alive = false;
+
+    // 1. Water tile directly between Kage and enemy within 2.4 tiles -> has LOS (water doesn't block projectiles),
+    //    so without dash-walkability guard Kage would dash into water; guard must prevent firing!
+    engine.state.grid[10 * MAP_WIDTH + 9] = TileType.WATER;
+    kage.x = 8.3;
+    kage.y = 10.5;
+    enemy.x = 10.4;
+    enemy.y = 10.5;
+    const ai = new BotController();
+    const waterInput = ai.computeInputs(engine.state, 0.05).get(0)!;
+    expect(waterInput.fire).toBe(false);
+
+    // 2. Solid wall between Kage and enemy + superCharge = 100 -> must cast Phantom Slash through wall!
+    engine.state.grid[10 * MAP_WIDTH + 9] = TileType.WALL_SOLID;
+    kage.x = 7.5;
+    kage.y = 10.5;
+    kage.hp = 2400; // below 78% HP -> wants lifesteal Super
+    kage.superCharge = 100;
+    enemy.x = 12.5;
+    enemy.y = 10.5;
+    const superInput = ai.computeInputs(engine.state, 0.05).get(0)!;
+    expect(superInput.superFire).toBe(true);
+
+    // 3. 60-tick stability check in both Gem Grab and Brawl Ball
+    for (const mode of ['gem-grab', 'brawl-ball'] as const) {
+      const sim = new MatchEngine({ mapId: 'crystal-cavern', mode, slots, seed: 88 });
+      const simAi = new BotController();
+      for (let t = 0; t < 60; t++) {
+        const inputs = simAi.computeInputs(sim.state, 0.05);
+        for (const [slotIdx, inp] of inputs) sim.setInput(slotIdx, inp);
+        sim.step(0.05);
+      }
+      expect(Number.isFinite(sim.state.brawlers[0].x)).toBe(true);
+      expect(Number.isFinite(sim.state.brawlers[0].y)).toBe(true);
+    }
+  });
 });
