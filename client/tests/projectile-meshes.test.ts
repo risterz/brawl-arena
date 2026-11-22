@@ -120,4 +120,72 @@ describe('Sculpted 3D projectile, bomb, crystal, flame, and heal meshes', () => 
     visual.updateAnimation(0.016, true, true);
     clearModelsForTest();
   });
+
+  it('rigs kage.glb as a real SkinnedMesh with hip/knee/arm joints and forward-backward leg stride in Run', () => {
+    const glbPath = path.resolve(__dirname, '../public/models/kage.glb');
+    const buf = fs.readFileSync(glbPath);
+    const jsonLen = buf.readUInt32LE(12);
+    const gltf = JSON.parse(buf.subarray(20, 20 + jsonLen).toString('utf8'));
+    const binStart = 20 + jsonLen + 8;
+
+    // 1. Must export a real skeletal Skin bound to at least one SkinnedMesh primitive (matching buck.glb)
+    expect(Array.isArray(gltf.skins) && gltf.skins.length).toBeGreaterThanOrEqual(1);
+    const skinnedNodes = gltf.nodes.filter((n: { skin?: number }) => n.skin !== undefined);
+    const skinnedPrims = gltf.meshes
+      .flatMap((m: { primitives: Array<{ attributes: Record<string, number> }> }) => m.primitives)
+      .filter((p: { attributes: Record<string, number> }) => p.attributes.JOINTS_0 !== undefined && p.attributes.WEIGHTS_0 !== undefined);
+    expect(skinnedNodes.length).toBeGreaterThanOrEqual(1);
+    expect(skinnedPrims.length).toBeGreaterThanOrEqual(1);
+    const jointNames: string[] = gltf.skins[0].joints.map((idx: number) => gltf.nodes[idx].name);
+    for (const required of [
+      'Pelvis',
+      'Spine',
+      'Head',
+      'UpperArm.L',
+      'Forearm.L',
+      'UpperArm.R',
+      'Forearm.R',
+      'Thigh.L',
+      'Shin.L',
+      'Foot.L',
+      'Thigh.R',
+      'Shin.R',
+      'Foot.R',
+    ]) {
+      expect(jointNames, `Missing skin joint ${required}`).toContain(required);
+    }
+
+    // 2. Run clip must swing Thigh.L and bend Shin.L around the side-to-side Z hinge (not axial Y twist!)
+    const runAnim = (gltf.animations ?? []).find((a: { name: string }) => a.name.toLowerCase().includes('run'));
+    expect(runAnim).toBeDefined();
+
+    const readQuatSpan = (boneName: string) => {
+      const nodeIdx = gltf.nodes.findIndex((n: { name: string }) => n.name === boneName);
+      expect(nodeIdx).toBeGreaterThanOrEqual(0);
+      const ch = runAnim.channels.find(
+        (c: { target: { node: number; path: string } }) => c.target.node === nodeIdx && c.target.path === 'rotation',
+      );
+      expect(ch, `Missing rotation channel for ${boneName}`).toBeDefined();
+      const sampler = runAnim.samplers[ch.sampler];
+      const acc = gltf.accessors[sampler.output];
+      const bv = gltf.bufferViews[acc.bufferView];
+      const offset = binStart + (bv.byteOffset ?? 0) + (acc.byteOffset ?? 0);
+      let minZ = Infinity;
+      let maxZ = -Infinity;
+      for (let i = 0; i < acc.count; i++) {
+        const qz = buf.readFloatLE(offset + i * 16 + 8); // quaternion z component (local Z hinge)
+        minZ = Math.min(minZ, qz);
+        maxZ = Math.max(maxZ, qz);
+      }
+      return maxZ - minZ;
+    };
+
+    // Thigh must swing strongly forward/back, Shin bends at knee, Foot rolls at ankle
+    expect(readQuatSpan('Thigh.L')).toBeGreaterThan(0.35);
+    expect(readQuatSpan('Thigh.R')).toBeGreaterThan(0.35);
+    expect(readQuatSpan('Shin.L')).toBeGreaterThan(0.15);
+    expect(readQuatSpan('Shin.R')).toBeGreaterThan(0.15);
+    expect(readQuatSpan('Foot.L')).toBeGreaterThan(0.15);
+    expect(readQuatSpan('Foot.R')).toBeGreaterThan(0.15);
+  });
 });
