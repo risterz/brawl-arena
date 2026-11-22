@@ -48,10 +48,24 @@ test.describe('Brawl Arena End-to-End', () => {
 
     const kageCard = page.locator('.brawler-card[data-id="kage"]');
     await expect(kageCard).toBeVisible();
-    const portraitLoaded = await kageCard
-      .locator('img')
-      .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0);
-    expect(portraitLoaded).toBe(true);
+    await expect
+      .poll(
+        () =>
+          kageCard
+            .locator('img')
+            .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
+    await expect
+      .poll(
+        () =>
+          page
+            .locator('.brawler-card[data-id="buck"] img')
+            .evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0),
+        { timeout: 10_000 },
+      )
+      .toBe(true);
 
     await kageCard.click();
     await expect(page.locator('.brawler-summary')).toContainText('Kage');
