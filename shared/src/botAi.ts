@@ -361,13 +361,16 @@ export class BotController {
       );
       const gemDeficit = enemyTeamGems - myTeamGems;
       const desperateCountdown = enemyCountdown && state.countdownTimer <= 6.5;
-      // Enemy team is leading heavily: countdown active, ahead by 4+ gems, or at 8+ gems & ahead by 3+
+      // Enemy team is leading: countdown active, ahead by 3+ gems, or at 7+ gems & ahead by 2+
       const enemyLeadingHeavily =
-        enemyCountdown || gemDeficit >= 4 || (enemyTeamGems >= 8 && gemDeficit >= 3);
+        enemyCountdown || gemDeficit >= 3 || (enemyTeamGems >= 7 && gemDeficit >= 2);
+      // Team is trailing or tied while NOT in ally countdown (hiding in spawn at full HP loses the match!)
+      const needsMoreGemsToLead = !allyCountdown && gemDeficit >= 0;
       // Carrying 4+ gems ourselves means we must play carefully instead of feeding our gem stash!
       const heavyCarrier = bot.gems >= 4;
       const fullRushMode = enemyLeadingHeavily && (!heavyCarrier || desperateCountdown);
-      const carefulRushMode = enemyLeadingHeavily && heavyCarrier && !desperateCountdown;
+      const carefulRushMode =
+        (enemyLeadingHeavily || needsMoreGemsToLead) && heavyCarrier && !desperateCountdown;
 
       // Visible enemies only (strictly respects stealth bushes — zero cheating!)
       const visibleEnemies = state.brawlers.filter(
@@ -491,9 +494,24 @@ export class BotController {
           const enemyPushY = bot.team === 'blue' ? 9.5 : 23.5;
           const laneX = bot.slotIndex % 3 === 0 ? 10.5 : bot.slotIndex % 3 === 1 ? 5.5 : 15.5;
           goal = { x: laneX, y: enemyPushY };
-        } else if (!isCarrier && teamCarrier && (allyCountdown || teamCarrier.gems >= 5)) {
-          // Bodyguard / Escort positioning between our carrier and threats (or mid!)
-          const guardTarget = nearestEnemy ?? { x: map.minePos.x, y: map.minePos.y };
+        } else if (
+          !isCarrier &&
+          teamCarrier &&
+          (allyCountdown ||
+            (teamCarrier.gems >= 5 &&
+              visibleEnemies.some((e) => Math.hypot(e.x - teamCarrier.x, e.y - teamCarrier.y) < 8.5)))
+        ) {
+          // Bodyguard / Escort ONLY during ally countdown OR when a visible enemy actually threatens our carrier!
+          // Never stand AFK in spawn babysitting a safe carrier while enemies control the Gem Mine.
+          const carrierThreat =
+            visibleEnemies
+              .filter((e) => Math.hypot(e.x - teamCarrier.x, e.y - teamCarrier.y) < 10.0)
+              .sort(
+                (a, b) =>
+                  Math.hypot(a.x - teamCarrier.x, a.y - teamCarrier.y) -
+                  Math.hypot(b.x - teamCarrier.x, b.y - teamCarrier.y),
+              )[0] ?? null;
+          const guardTarget = carrierThreat ?? nearestEnemy ?? { x: map.minePos.x, y: map.minePos.y };
           const gx = guardTarget.x - teamCarrier.x;
           const gy = guardTarget.y - teamCarrier.y;
           const gd = Math.max(0.1, Math.hypot(gx, gy));
@@ -502,8 +520,15 @@ export class BotController {
             x: clamp(teamCarrier.x + (gx / gd) * offset, 2, state.width - 2),
             y: clamp(teamCarrier.y + (gy / gd) * offset, 2, state.height - 2),
           };
-        } else if (bot.brawlerId === 'lumi' && !isCarrier && teamCarrier) {
-          // Lumi shadows carrier / injured ally for team heals
+        } else if (
+          bot.brawlerId === 'lumi' &&
+          !isCarrier &&
+          teamCarrier &&
+          (allyCountdown ||
+            teamCarrier.hp / teamCarrier.maxHp < 0.72 ||
+            Math.abs(teamCarrier.y - map.minePos.y) < 9.0)
+        ) {
+          // Lumi shadows active/injured carrier for heals, but won't go AFK in spawn with a healthy idle carrier
           const hurtAlly = state.brawlers.find(
             (a) => a.team === bot.team && a.alive && a.slotIndex !== bot.slotIndex && a.hp / a.maxHp < 0.65,
           );

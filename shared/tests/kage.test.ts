@@ -40,18 +40,18 @@ describe('Kage (Shadow Assassin) config, Shadow Dash, and Phantom Slash', () => 
     expect(kage.role).toBe('Assassin');
     expect(kage.primaryColor).toBe('#1b3b4b');
     expect(kage.accentColor).toBe('#ff2e63');
-    expect(kage.maxHp).toBe(4200);
-    expect(kage.moveSpeed).toBe(4.25);
+    expect(kage.maxHp).toBe(3600);
+    expect(kage.moveSpeed).toBe(4.35);
     expect(kage.radius).toBe(0.39);
     expect(kage.maxAmmo).toBe(3);
-    expect(kage.reloadTime).toBe(1.65);
+    expect(kage.reloadTime).toBe(1.85);
     expect(kage.attackCooldown).toBe(0.28);
     expect(kage.attack.isDash).toBe(true);
     expect(kage.attack.range).toBe(2.7);
-    expect(kage.attack.damage).toBe(1080);
+    expect(kage.attack.damage).toBe(1200);
     expect(kage.superAttack.passesWalls).toBe(true);
     expect(kage.superAttack.lifestealRatio).toBe(0.8);
-    expect(kage.superAttack.damage).toBe(1250);
+    expect(kage.superAttack.damage).toBe(1300);
   });
 
   it('Shadow Dash lunges ~2.7 tiles over 0.18s, pierces 2 lined-up enemies once each, skips body separation, and clears on finish', () => {
@@ -87,11 +87,11 @@ describe('Kage (Shadow Assassin) config, Shadow Dash, and Phantom Slash', () => 
     // Lunged roughly 2.7 tiles East without getting pushed backward by enemies
     expect(kage.x).toBeGreaterThan(8.45);
     expect(kage.x).toBeLessThan(9.05);
-    // Each enemy hit exactly once for 1080 damage
-    expect(e1HpBefore - e1.hp).toBe(1080);
-    expect(e2HpBefore - e2.hp).toBe(1080);
-    // 22 super charge per hit -> 44 total
-    expect(kage.superCharge).toBe(44);
+    // Each enemy hit exactly once for 1200 damage
+    expect(e1HpBefore - e1.hp).toBe(1200);
+    expect(e2HpBefore - e2.hp).toBe(1200);
+    // 25 super charge per hit -> 50 total
+    expect(kage.superCharge).toBe(50);
   });
 
   it('Review Focus #1: Shadow Dash stops cleanly at solid walls, breakable walls, diagonal wall corners, and water without tunneling', () => {
@@ -198,12 +198,12 @@ describe('Kage (Shadow Assassin) config, Shadow Dash, and Phantom Slash', () => 
     // Walls intact (passes through without breaking)
     expect(getTile(engine.state.grid, 8, 7)).toBe(TileType.WALL_SOLID);
     expect(getTile(engine.state.grid, 9, 7)).toBe(TileType.WALL_BREAKABLE);
-    // Hit exactly once for 1250 damage
-    expect(enemyHpBefore - enemy.hp).toBe(1250);
-    // Healed for 80% of 1250 = 1000 HP
-    expect(kage.hp).toBe(3000);
-    expect(kage.stats.healingDone).toBe(1000);
-    expect(allEvents.some((e) => e.type === 'heal' && e.targetSlot === 0 && e.amount === 1000)).toBe(true);
+    // Hit exactly once for 1300 damage
+    expect(enemyHpBefore - enemy.hp).toBe(1300);
+    // Healed for 80% of 1300 = 1040 HP
+    expect(kage.hp).toBe(3040);
+    expect(kage.stats.healingDone).toBe(1040);
+    expect(allEvents.some((e) => e.type === 'heal' && e.targetSlot === 0 && e.amount === 1040)).toBe(true);
   });
 
   it('Review Focus #2: Phantom Slash heals 0 against spawn-invulnerable targets and scales lifesteal to actual HP removed on overkill', () => {

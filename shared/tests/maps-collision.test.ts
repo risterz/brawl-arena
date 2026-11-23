@@ -22,6 +22,60 @@ describe('brawlers and symmetric maps', () => {
     expect(BRAWLERS.golem.maxHp).toBeGreaterThan(BRAWLERS.vex.maxHp);
   });
 
+  it('balances hero attributes to match each role identity', () => {
+    const sustainedMaxDps = (id: keyof typeof BRAWLERS) => {
+      const b = BRAWLERS[id];
+      const shotsPerAmmo =
+        b.attack.burstCount && b.attack.burstCount > 1
+          ? b.attack.burstCount
+          : b.id === 'lumi' || b.id === 'kage'
+            ? 1
+            : Math.max(1, b.attack.projectiles);
+      return (b.attack.damage * shotsPerAmmo) / b.reloadTime;
+    };
+
+    // Role HP hierarchy: Tank > Shotgunner > Support > Dualist > Assassin > Thrower > Sharpshooter
+    expect(BRAWLERS.golem.maxHp).toBeGreaterThan(BRAWLERS.buck.maxHp);
+    expect(BRAWLERS.buck.maxHp).toBeGreaterThan(BRAWLERS.lumi.maxHp);
+    expect(BRAWLERS.lumi.maxHp).toBeGreaterThan(BRAWLERS.blaze.maxHp);
+    expect(BRAWLERS.blaze.maxHp).toBeGreaterThan(BRAWLERS.kage.maxHp);
+    expect(BRAWLERS.kage.maxHp).toBeGreaterThan(BRAWLERS.mort.maxHp);
+    expect(BRAWLERS.mort.maxHp).toBeGreaterThan(BRAWLERS.vex.maxHp);
+
+    // Tank (Golem): highest HP, slowest speed, lower DPS than DPS/anti-tank roles
+    for (const b of BRAWLER_LIST) {
+      if (b.id !== 'golem') {
+        expect(BRAWLERS.golem.maxHp).toBeGreaterThan(b.maxHp);
+        expect(BRAWLERS.golem.moveSpeed).toBeLessThan(b.moveSpeed);
+      }
+    }
+    expect(sustainedMaxDps('golem')).toBeLessThan(sustainedMaxDps('blaze'));
+    expect(sustainedMaxDps('golem')).toBeLessThan(sustainedMaxDps('buck'));
+    expect(sustainedMaxDps('golem')).toBeLessThan(sustainedMaxDps('vex'));
+
+    // Assassin (Kage): highest mobility and sharp burst capable of eliminating squishies in 3 dashes
+    for (const b of BRAWLER_LIST) {
+      if (b.id !== 'kage') {
+        expect(BRAWLERS.kage.moveSpeed).toBeGreaterThan(b.moveSpeed);
+      }
+    }
+    expect(BRAWLERS.kage.attack.damage * 3).toBeGreaterThanOrEqual(BRAWLERS.vex.maxHp);
+    expect(BRAWLERS.kage.attack.damage * 3).toBeLessThan(BRAWLERS.buck.maxHp);
+
+    // Sharpshooter (Vex): longest attack range and lowest HP (glass cannon)
+    for (const b of BRAWLER_LIST) {
+      if (b.id !== 'vex') {
+        expect(BRAWLERS.vex.attack.range).toBeGreaterThan(b.attack.range);
+        expect(BRAWLERS.vex.maxHp).toBeLessThan(b.maxHp);
+      }
+    }
+
+    // Support / Healer (Lumi): lowest single-target primary DPS with big team healing Super
+    expect(sustainedMaxDps('lumi')).toBeLessThan(sustainedMaxDps('golem'));
+    expect(BRAWLERS.lumi.superAttack.isHeal).toBe(true);
+    expect(BRAWLERS.lumi.superAttack.healAmount).toBeGreaterThanOrEqual(2500);
+  });
+
   it('builds 21x33 180-degree symmetric maps with center gem mine and valid spawns', () => {
     for (const map of Object.values(MAPS)) {
       expect(map.width).toBe(MAP_WIDTH);

@@ -1,5 +1,6 @@
 import {
   BRAWLER_LIST,
+  BrawlerConfig,
   BrawlerId,
   BRAWLERS,
   GameMode,
@@ -61,6 +62,22 @@ function escapeHtml(text: string): string {
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;');
+}
+
+function formatAttackDamage(b: BrawlerConfig): string {
+  if (b.attack.minDamage !== undefined && b.attack.minDamage !== b.attack.damage) {
+    return `${b.attack.minDamage}-${b.attack.damage}`;
+  }
+  if (b.attack.burstCount && b.attack.burstCount > 1) {
+    return `${b.attack.damage}×${b.attack.burstCount}`;
+  }
+  if (b.attack.projectiles > 1 && b.id !== 'lumi' && b.id !== 'kage') {
+    return `${b.attack.damage}×${b.attack.projectiles}`;
+  }
+  if (b.attack.puddleDps) {
+    return `${b.attack.damage}+${b.attack.puddleDps}/s`;
+  }
+  return `${b.attack.damage}`;
 }
 
 export class ScreenManager {
@@ -146,7 +163,7 @@ export class ScreenManager {
                   ${escapeHtml(b.name)}
                   <span class="role-pill">${escapeHtml(b.role)}</span>
                 </h2>
-                <div style="font-size:11px;font-weight:800;color:#9ec5ff;">HP ${b.maxHp} • Range ${b.attack.range} • Speed ${b.moveSpeed}</div>
+                <div style="font-size:11px;font-weight:800;color:#9ec5ff;">HP ${b.maxHp} • DMG ${formatAttackDamage(b)} • Range ${b.attack.range} • Speed ${b.moveSpeed}</div>
               </div>
             </div>
             <p>${escapeHtml(b.description)}</p>
@@ -246,7 +263,7 @@ export class ScreenManager {
               </strong>
               <span style="font-size:11px;font-weight:900;color:#9ec5ff;">HP ${b.maxHp}</span>
             </div>
-            <div style="font-size:11px;color:#9ec5ff;margin-bottom:5px;">Range ${b.attack.range} • Speed ${b.moveSpeed}</div>
+            <div style="font-size:11px;color:#9ec5ff;margin-bottom:5px;">DMG ${formatAttackDamage(b)} • Range ${b.attack.range} • Speed ${b.moveSpeed}</div>
             <div style="font-size:12px;color:#e4f0ff;line-height:1.3;">${escapeHtml(b.description)}</div>
             <div style="font-size:11.5px;color:#ffd43b;margin-top:4px;line-height:1.3;"><strong>Super:</strong> ${escapeHtml(b.superDescription)}</div>
           </div>

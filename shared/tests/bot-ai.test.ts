@@ -370,4 +370,50 @@ describe('Bot pathfinding and Gem Grab AI', () => {
       expect(Number.isFinite(sim.state.brawlers[0].y)).toBe(true);
     }
   });
+
+  it('never leaves bots AFK in spawn when trailing 5-7 with a 5-gem carrier or when carrier is safe with no nearby threat', () => {
+    const slots: SlotSetup[] = [
+      { slotIndex: 0, team: 'blue', name: 'HumanVex', isBot: false, brawlerId: 'vex' },
+      { slotIndex: 1, team: 'blue', name: 'Bot Buck', isBot: true, brawlerId: 'buck' },
+      { slotIndex: 2, team: 'blue', name: 'Bot Blaze', isBot: true, brawlerId: 'blaze' },
+      { slotIndex: 3, team: 'red', name: 'Red1', isBot: true, brawlerId: 'golem' },
+      { slotIndex: 4, team: 'red', name: 'Red2', isBot: true, brawlerId: 'mort' },
+      { slotIndex: 5, team: 'red', name: 'Red3', isBot: true, brawlerId: 'lumi' },
+    ];
+    const engine = new MatchEngine({ mapId: 'crystal-cavern', slots, seed: 11 });
+    const buck = engine.state.brawlers[1];
+    const blaze = engine.state.brawlers[2];
+    const redCarrier = engine.state.brawlers[3];
+
+    // Exact reported scenario: Blue 5 vs Red 7, Bot Blaze (5 gems, full HP) and Bot Buck (0 gems) sitting in Blue spawn
+    blaze.x = 15.5;
+    blaze.y = 29.5;
+    blaze.gems = 5;
+    blaze.hp = blaze.maxHp;
+    buck.x = 14.8;
+    buck.y = 26.8;
+    buck.gems = 0;
+    buck.hp = buck.maxHp;
+    redCarrier.x = 10.5;
+    redCarrier.y = 11.0;
+    redCarrier.gems = 7;
+    engine.state.brawlers[4].alive = false;
+    engine.state.brawlers[5].alive = false;
+    engine.state.blueGems = 5;
+    engine.state.redGems = 7;
+
+    const ai = new BotController();
+    const inputs = ai.computeInputs(engine.state, 0.05);
+    // Both Bot Blaze (healthy 5-gem carrier while trailing 5-7) AND Bot Buck (0 gems) must push north (-y) out of spawn!
+    expect(inputs.get(1)!.moveY).toBeLessThan(-0.3);
+    expect(inputs.get(2)!.moveY).toBeLessThan(-0.3);
+
+    // Even when Blue leads 6-2 (not countdown) with Blaze safely in spawn and no enemy nearby, 0-gem Buck must contest mid!
+    blaze.gems = 6;
+    redCarrier.gems = 2;
+    engine.state.blueGems = 6;
+    engine.state.redGems = 2;
+    const inputsLead = ai.computeInputs(engine.state, 0.05);
+    expect(inputsLead.get(1)!.moveY).toBeLessThan(-0.3);
+  });
 });
