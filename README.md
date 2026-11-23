@@ -4,6 +4,9 @@
 
 **A fast-paced 3D 3v3 real-time multiplayer arena brawler built with Three.js, TypeScript, and Cloudflare Durable Objects.**
 
+### 🚀 [Play Live on Cloudflare Workers →](https://brawl-arena.harisharraz02.workers.dev)
+
+[![Live Demo](https://img.shields.io/badge/Play_Live-Cloudflare_Workers-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://brawl-arena.harisharraz02.workers.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Three.js](https://img.shields.io/badge/Three.js-0.175-000000?style=for-the-badge&logo=threedotjs&logoColor=white)](https://threejs.org/)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Durable_Objects-F38020?style=for-the-badge&logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/durable-objects/)
