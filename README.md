@@ -154,6 +154,8 @@ npm run test:e2e
 npm run deploy
 ```
 
+> **CI/CD:** Connected to **Cloudflare Workers Builds** on `main` — every push automatically builds the monorepo and deploys live to [brawl-arena.harisharraz02.workers.dev](https://brawl-arena.harisharraz02.workers.dev).
+
 ---
 
 ## 🧪 Test Coverage
